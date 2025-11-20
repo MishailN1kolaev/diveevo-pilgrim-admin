@@ -11,6 +11,7 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.markdown import hbold
 from aiohttp import web
+from pathlib import Path
 
 import database as db
 
@@ -19,17 +20,19 @@ TOKEN = "8353595718:AAEN6_8rF3feUhWOzgulM2Ns_HLYI2c45bw" # Placeholder
 ADMIN_ID = int(getenv("ADMIN_ID", 627977881))
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = 8080
-BASE_URL = "https://divinely-golden-potoroo.cloudpub.ru/"
+BASE_URL = "https://divinely-golden-potoroo.cloudpub.ru"
 
 dp = Dispatcher()
 
 # --- Web Server Handlers ---
 
+BASE_DIR = Path(__file__).parent
+
 async def handle_guest_page(request):
-    return web.FileResponse('./static/guest_index.html')
+    return web.FileResponse(BASE_DIR / 'static' / 'guest_index.html')
 
 async def handle_admin_page(request):
-    return web.FileResponse('./static/admin_pms.html')
+    return web.FileResponse(BASE_DIR / 'static' / 'admin_pms.html')
 
 async def handle_get_bookings(request):
     bookings = await db.get_bookings()
@@ -62,6 +65,10 @@ async def command_start_handler(message: Message) -> None:
 
 @dp.message(Command("admin"))
 async def command_admin_handler(message: Message) -> None:
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("Доступ запрещен.")
+        return
+
     web_app_url = f"{BASE_URL}/admin"
     kb = ReplyKeyboardMarkup(
         keyboard=[
