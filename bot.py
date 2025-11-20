@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import Message, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.markdown import hbold
 from aiohttp import web
@@ -20,7 +21,7 @@ TOKEN = "123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" # Placeholder
 ADMIN_ID = int(getenv("ADMIN_ID", 123456789))
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = 8080
-BASE_URL = "http://localhost:8080"
+BASE_URL = getenv("BASE_URL", "http://localhost:8080")
 
 dp = Dispatcher()
 
@@ -65,7 +66,15 @@ async def command_start_handler(message: Message) -> None:
         resize_keyboard=True
     )
 
-    await message.answer(f"Добро пожаловать в отель! Вы в комнате {room}.", reply_markup=kb)
+    try:
+        await message.answer(f"Добро пожаловать в отель! Вы в комнате {room}.", reply_markup=kb)
+    except TelegramBadRequest:
+        await message.answer(
+            f"Добро пожаловать в отель! Вы в комнате {room}.\n\n"
+            "⚠️ <b>Ошибка:</b> Telegram требует HTTPS для Web Apps.\n"
+            f"Текущий BASE_URL: {BASE_URL}\n"
+            "Пожалуйста, настройте HTTPS (например, используя ngrok) и установите переменную окружения BASE_URL."
+        )
 
 @dp.message(Command("admin"))
 async def command_admin_handler(message: Message) -> None:
@@ -76,7 +85,15 @@ async def command_admin_handler(message: Message) -> None:
         ],
         resize_keyboard=True
     )
-    await message.answer("Панель администратора", reply_markup=kb)
+    try:
+        await message.answer("Панель администратора", reply_markup=kb)
+    except TelegramBadRequest:
+        await message.answer(
+            "Панель администратора\n\n"
+            "⚠️ <b>Ошибка:</b> Telegram требует HTTPS для Web Apps.\n"
+            f"Текущий BASE_URL: {BASE_URL}\n"
+            "Пожалуйста, настройте HTTPS (например, используя ngrok) и установите переменную окружения BASE_URL."
+        )
 
 @dp.message(F.web_app_data)
 async def handle_web_app_data(message: Message, bot: Bot):
