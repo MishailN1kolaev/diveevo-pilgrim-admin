@@ -1,7 +1,6 @@
 import aiosqlite
 import json
 from datetime import datetime
-import logging
 
 DB_NAME = "hotel.db"
 
@@ -11,8 +10,7 @@ async def init_db():
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
                 username TEXT,
-                current_room INTEGER,
-                phone TEXT UNIQUE
+                current_room INTEGER
             )
         """)
         await db.execute("""
@@ -35,33 +33,23 @@ async def init_db():
                 status TEXT DEFAULT 'booked',
                 cost_per_night REAL DEFAULT 0,
                 extras_total REAL DEFAULT 0,
-                is_cleaned BOOLEAN DEFAULT 0,
-                phone TEXT,
-                user_id INTEGER
+                is_cleaned BOOLEAN DEFAULT 0
             )
         """)
 
-        # Migrations
-        columns = {
-            'bookings': [
-                ('cost_per_night', 'REAL DEFAULT 0'),
-                ('extras_total', 'REAL DEFAULT 0'),
-                ('is_cleaned', 'BOOLEAN DEFAULT 0'),
-                ('phone', 'TEXT'),
-                ('user_id', 'INTEGER')
-            ],
-            'users': [
-                ('phone', 'TEXT UNIQUE')
-            ]
-        }
-
-        for table, cols in columns.items():
-            for col_name, col_type in cols:
-                try:
-                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-                except Exception as e:
-                    # logging.debug(f"Column {col_name} in {table} likely exists: {e}")
-                    pass
+        # Migrations for existing tables
+        try:
+            await db.execute("ALTER TABLE bookings ADD COLUMN cost_per_night REAL DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE bookings ADD COLUMN extras_total REAL DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE bookings ADD COLUMN is_cleaned BOOLEAN DEFAULT 0")
+        except Exception:
+            pass
 
         # New Tables
         await db.execute("""
@@ -97,51 +85,18 @@ async def init_db():
 # --- User ---
 async def add_user(user_id, username, current_room):
     async with aiosqlite.connect(DB_NAME) as db:
-        # Update existing or insert new.
-        # Note: This overwrites phone if it was NULL, but if we want to keep existing phone?
-        # We should probably check if user exists.
-
-        # Check if user exists
-        async with db.execute("SELECT phone FROM users WHERE user_id = ?", (user_id,)) as cursor:
-            row = await cursor.fetchone()
-
-        if row:
-            # Update info but keep phone if not passed (here we don't pass phone in this func)
-            await db.execute("""
-                UPDATE users SET username = ?, current_room = ? WHERE user_id = ?
-            """, (username, current_room, user_id))
-        else:
-            await db.execute("""
-                INSERT INTO users (user_id, username, current_room)
-                VALUES (?, ?, ?)
-            """, (user_id, username, current_room))
+        await db.execute("""
+            INSERT OR REPLACE INTO users (user_id, username, current_room)
+            VALUES (?, ?, ?)
+        """, (user_id, username, current_room))
         await db.commit()
-
-async def update_user_phone(user_id, phone):
-    async with aiosqlite.connect(DB_NAME) as db:
-        try:
-            await db.execute("UPDATE users SET phone = ? WHERE user_id = ?", (phone, user_id))
-            await db.commit()
-            return True
-        except aiosqlite.IntegrityError:
-            return False
 
 async def get_user(user_id):
     async with aiosqlite.connect(DB_NAME) as db:
-        db.row_factory = aiosqlite.Row
         async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
             if row:
-                return dict(row)
-            return None
-
-async def get_user_by_phone(phone):
-    async with aiosqlite.connect(DB_NAME) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM users WHERE phone = ?", (phone,)) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
+                return {"user_id": row[0], "username": row[1], "current_room": row[2]}
             return None
 
 # --- Orders ---
@@ -157,34 +112,21 @@ async def save_order(user_id, items, total_price):
         return cursor.lastrowid
 
 # --- Bookings ---
-async def add_booking(room_number, guest_name, check_in, check_out, cost_per_night, phone=None):
-    # Try to resolve user_id from phone
-    user_id = None
-    if phone:
-        u = await get_user_by_phone(phone)
-        if u:
-            user_id = u['user_id']
-
+async def add_booking(room_number, guest_name, check_in, check_out, cost_per_night):
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("""
-            INSERT INTO bookings (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id))
+            INSERT INTO bookings (room_number, guest_name, check_in, check_out, cost_per_night)
+            VALUES (?, ?, ?, ?, ?)
+        """, (room_number, guest_name, check_in, check_out, cost_per_night))
         await db.commit()
         return cursor.lastrowid
-
-async def link_bookings_to_user(phone, user_id):
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("""
-            UPDATE bookings SET user_id = ? WHERE phone = ?
-        """, (user_id, phone))
-        await db.commit()
 
 async def update_booking_extras(room_number, amount):
     today = datetime.now().strftime("%Y-%m-%d")
     async with aiosqlite.connect(DB_NAME) as db:
         # Find active booking for this room
         # Simple logic: check_in <= today < check_out
+        # Note: SQLite dates as strings work with lexicographical comparison (YYYY-MM-DD)
         async with db.execute("""
             SELECT id, extras_total FROM bookings
             WHERE room_number = ? AND check_in <= ? AND check_out > ?
