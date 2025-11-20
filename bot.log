@@ -1,0 +1,6 @@
+INFO:aiogram.dispatcher:Start polling
+INFO:aiogram.dispatcher:Polling stopped
+ERROR:root:Bot polling failed (expected in demo without valid token): Telegram server says - Unauthorized
+INFO:aiohttp.access:127.0.0.1 [20/Nov/2025:11:58:36 +0000] "HEAD /guest HTTP/1.1" 200 240 "-" "curl/8.5.0"
+INFO:aiohttp.access:127.0.0.1 [20/Nov/2025:11:58:36 +0000] "HEAD /admin HTTP/1.1" 200 240 "-" "curl/8.5.0"
+INFO:aiohttp.access:127.0.0.1 [20/Nov/2025:11:58:36 +0000] "GET /api/bookings HTTP/1.1" 200 291 "-" "curl/8.5.0"
