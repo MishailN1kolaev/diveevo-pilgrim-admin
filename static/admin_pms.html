@@ -7,47 +7,44 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --bg-color: var(--tg-theme-bg-color, #fff);
-            --text-color: var(--tg-theme-text-color, #000);
-            --secondary-bg-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
-            --hint-color: var(--tg-theme-hint-color, #999);
-            --button-color: var(--tg-theme-button-color, #2481cc);
-            --button-text-color: var(--tg-theme-button-text-color, #fff);
-
-            --primary: var(--button-color);
-            --bg: var(--bg-color);
-            --sec-bg: var(--secondary-bg-color);
-            --border: var(--hint-color);
+            /* Светлая тема по дефолту */
+            --bg-color: #ffffff;
+            --text-color: #000000;
+            --secondary-bg-color: #f5f5f5;
+            --hint-color: #999999;
+            --button-color: #2481cc;
+            --button-text-color: #ffffff;
+            --border-color: #dddddd;
         }
-        body { font-family: sans-serif; margin: 0; padding-bottom: 50px; background-color: var(--bg); color: var(--text-color); }
-        .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--sec-bg); position: sticky; top: 0; z-index: 10; }
-        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; border-bottom: 3px solid transparent; color: var(--text-color); }
-        .tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: bold; }
+        body { font-family: sans-serif; margin: 0; padding-bottom: 50px; background-color: var(--bg-color); color: var(--text-color); font-size: 16px; }
+        .tabs { display: flex; border-bottom: 1px solid var(--border-color); background: var(--secondary-bg-color); position: sticky; top: 0; z-index: 10; }
+        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; border-bottom: 3px solid transparent; color: var(--text-color); font-size: 16px; }
+        .tab.active { border-bottom-color: var(--button-color); color: var(--button-color); font-weight: bold; }
 
         .content { display: none; padding: 15px; }
         .content.active { display: block; }
 
         /* Forms */
-        .form-card { background: var(--sec-bg); padding: 15px; border-radius: 8px; margin-bottom: 15px; }
-        input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box; background: var(--bg); color: var(--text-color); }
-        button { width: 100%; padding: 10px; background: var(--primary); color: var(--button-text-color); border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        .form-card { background: var(--secondary-bg-color); padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        input, select, textarea { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; background: #fff; color: var(--text-color); font-size: 16px; }
+        button { width: 100%; padding: 12px; background: var(--button-color); color: var(--button-text-color); border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
         button.delete { background: #ff5252; }
 
         /* Lists */
-        .list-item { background: var(--bg); border: 1px solid var(--border); padding: 10px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .list-item { background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
         .list-info { flex-grow: 1; }
 
         /* Chessboard Grid */
         .controls { display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center; }
-        .grid-container { display: grid; overflow-x: auto; border: 1px solid var(--border); position: relative; }
-        .cell { height: 40px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; min-width: 40px; color: var(--text-color); }
-        .header-cell { background: var(--sec-bg); color: var(--text-color); font-weight: bold; position: sticky; top: 0; z-index: 5; }
-        .room-cell { background: var(--sec-bg); color: var(--text-color); font-weight: bold; position: sticky; left: 0; z-index: 6; min-width: 60px; justify-content: flex-start; padding-left: 5px; }
-        .booking-bar { background: var(--primary); color: var(--button-text-color); position: absolute; height: 30px; top: 5px; border-radius: 4px; font-size: 10px; padding: 0 5px; line-height: 30px; overflow: hidden; white-space: nowrap; cursor: pointer; z-index: 4; opacity: 0.9; }
+        .grid-container { display: grid; overflow-x: auto; border: 1px solid var(--border-color); position: relative; }
+        .cell { height: 50px; border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 14px; min-width: 50px; color: var(--text-color); }
+        .header-cell { background: var(--secondary-bg-color); color: var(--text-color); font-weight: bold; position: sticky; top: 0; z-index: 5; }
+        .room-cell { background: var(--secondary-bg-color); color: var(--text-color); font-weight: bold; position: sticky; left: 0; z-index: 6; min-width: 70px; justify-content: flex-start; padding-left: 5px; }
+        .booking-bar { background: var(--button-color); color: var(--button-text-color); position: absolute; height: 40px; top: 5px; border-radius: 4px; font-size: 12px; padding: 0 5px; line-height: 40px; overflow: hidden; white-space: nowrap; cursor: pointer; z-index: 4; opacity: 0.9; }
 
         .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
-        .modal-content { background: var(--bg); color: var(--text-color); padding: 20px; border-radius: 8px; width: 90%; max-width: 350px; border: 1px solid var(--border); }
+        .modal-content { background: var(--bg-color); color: var(--text-color); padding: 20px; border-radius: 8px; width: 90%; max-width: 350px; border: 1px solid var(--border-color); max-height: 90vh; overflow-y: auto; }
     </style>
 </head>
 <body>
@@ -74,7 +71,7 @@
         <h3>Добавить номер</h3>
         <input type="number" id="room-number" placeholder="Номер (101)">
         <input type="text" id="room-type" placeholder="Тип (Люкс)">
-        <input type="number" id="room-price" placeholder="Цена">
+        <input type="number" id="room-price" placeholder="Цена (стандарт)">
         <button onclick="addRoom()">Добавить</button>
     </div>
     <div id="rooms-list"></div>
@@ -102,13 +99,22 @@
         <h3 id="modal-title">Бронирование</h3>
         <input type="hidden" id="b-id">
         <label>Комната</label>
-        <select id="b-room"></select>
+        <select id="b-room" onchange="updateRoomPrice()"></select>
         <label>Заезд</label>
-        <input type="date" id="b-checkin">
+        <input type="date" id="b-checkin" onchange="recalcTotal()">
         <label>Выезд</label>
-        <input type="date" id="b-checkout">
+        <input type="date" id="b-checkout" onchange="recalcTotal()">
         <label>Гость</label>
         <input type="text" id="b-guest">
+        <label>Стоимость за сутки (₽)</label>
+        <input type="number" id="b-cost-per-night" onchange="recalcTotal()">
+
+        <div style="background: #eee; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
+            <div>Проживание: <b id="calc-room-total">0</b> ₽</div>
+            <div>Доп. услуги: <b id="calc-extras-total">0</b> ₽</div>
+            <div style="font-size: 1.2em; margin-top: 5px;">Итого: <b id="calc-total">0</b> ₽</div>
+        </div>
+
         <div style="display:flex; gap:10px; margin-top:10px;">
             <button class="delete" id="btn-cancel" onclick="deleteBooking()" style="display:none">Удалить</button>
             <button onclick="saveBooking()">Сохранить</button>
@@ -126,7 +132,7 @@
     let bookingsData = [];
     let menuData = [];
     let startDate = new Date();
-    const daysToShow = 14; // 2 weeks view
+    const daysToShow = 7; // Changed to 7 days
 
     // Initialization
     async function init() {
@@ -282,7 +288,7 @@
         grid.innerHTML = '';
 
         // Layout
-        grid.style.gridTemplateColumns = `60px repeat(${daysToShow}, 1fr)`;
+        grid.style.gridTemplateColumns = `70px repeat(${daysToShow}, 1fr)`;
 
         // Dates Header
         grid.appendChild(createCell('№', 'header-cell room-cell'));
@@ -340,19 +346,16 @@
         const durationDays = Math.ceil(durationTime / (1000 * 60 * 60 * 24));
 
         // Logic to position
-        // Col start = 2 (room col is 1) + diffDays
-        // But if diffDays < 0 (started before view), we truncate
-
         let startCol = 2 + diffDays;
         let span = durationDays;
-        let leftOffset = 0;
 
+        // Handle bookings starting before view
         if (startCol < 2) {
              span += (startCol - 2);
              startCol = 2;
-             // visual fix needed if we want to show it continues from left
         }
 
+        // Handle bookings ending after view
         if (startCol > (daysToShow + 1)) return; // Starts after view
 
         if ((startCol + span) > (daysToShow + 2)) {
@@ -382,6 +385,45 @@
     }
 
     // --- Modal & Booking Actions ---
+    function updateRoomPrice() {
+        const roomNum = document.getElementById('b-room').value;
+        const room = roomsData.find(r => r.number == roomNum);
+        if (room) {
+            // Only set if empty or default? For now just override if new booking
+            if (!document.getElementById('b-id').value) {
+                document.getElementById('b-cost-per-night').value = room.price;
+                recalcTotal();
+            }
+        }
+    }
+
+    function recalcTotal() {
+        const checkIn = new Date(document.getElementById('b-checkin').value);
+        const checkOut = new Date(document.getElementById('b-checkout').value);
+        const costPerNight = parseFloat(document.getElementById('b-cost-per-night').value) || 0;
+
+        // Calculate nights
+        let nights = 0;
+        if (checkIn && checkOut && checkOut > checkIn) {
+            const diff = checkOut - checkIn;
+            nights = Math.ceil(diff / (1000 * 60 * 60 * 24));
+        }
+
+        const roomTotal = nights * costPerNight;
+
+        // Extras come from booking data if editing
+        let extras = 0;
+        const id = document.getElementById('b-id').value;
+        if (id) {
+            const booking = bookingsData.find(b => b.id == id);
+            if (booking) extras = booking.extras_total || 0;
+        }
+
+        document.getElementById('calc-room-total').innerText = roomTotal;
+        document.getElementById('calc-extras-total').innerText = extras;
+        document.getElementById('calc-total').innerText = roomTotal + extras;
+    }
+
     function openModal(booking, roomNum, dateStr) {
         const modal = document.getElementById('booking-modal');
         const btnCancel = document.getElementById('btn-cancel');
@@ -393,6 +435,8 @@
             document.getElementById('b-checkin').value = booking.check_in;
             document.getElementById('b-checkout').value = booking.check_out;
             document.getElementById('b-guest').value = booking.guest_name;
+            document.getElementById('b-cost-per-night').value = booking.cost_per_night || 0;
+
             btnCancel.style.display = 'block';
         } else {
             document.getElementById('modal-title').innerText = "Новая бронь";
@@ -405,8 +449,14 @@
             document.getElementById('b-checkout').value = next.toISOString().split('T')[0];
 
             document.getElementById('b-guest').value = '';
+
+            // Set default price
+            const room = roomsData.find(r => r.number == roomNum);
+            document.getElementById('b-cost-per-night').value = room ? room.price : 0;
+
             btnCancel.style.display = 'none';
         }
+        recalcTotal();
         modal.classList.add('active');
     }
 
@@ -420,25 +470,30 @@
         const check_in = document.getElementById('b-checkin').value;
         const check_out = document.getElementById('b-checkout').value;
         const guest_name = document.getElementById('b-guest').value;
+        const cost_per_night = parseFloat(document.getElementById('b-cost-per-night').value) || 0;
 
         if(!guest_name) return tg.showAlert("Введите имя гостя");
 
-        // Since we don't have an edit API yet, we'll just use create.
-        // Ideally: if id exists -> update. For MVP -> delete then create (risky) or just create.
-        // The current backend only has `add_booking`. I'll implement a simple create via web_app_data or API.
-        // Since this is the ADMIN panel, it should probably use direct API calls instead of `tg.sendData` which closes the app.
-        // The user requested "handles" (API).
-
         if (id) {
-             // Edit not implemented in DB yet, let's just re-create for now or skip
-             alert("Редактирование пока недоступно, только создание/удаление");
+             // Edit not implemented fully yet (need to delete/recreate or add update API)
+             // For now, we can just delete and create new, but that changes ID.
+             // I'll check if user wants me to implement edit API.
+             // The previous version just alerted.
+             // I'll implement delete-then-create logic for now as MVP,
+             // BUT wait, `extras_total` will be lost if I do that.
+             // So I really should have an update endpoint.
+             // Given I can't change backend easily without step 1, I already did step 1.
+             // But I didn't add UPDATE endpoint.
+             // I will just stick to create new for now and warn user, OR use create to override?
+             // Actually, the backend `add_booking` is just insert.
+             alert("Редактирование: удалите старую и создайте новую (для сохранения статистики нужно API обновления)");
              return;
         }
 
         const res = await fetch('/api/bookings', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({room_number, guest_name, check_in, check_out})
+            body: JSON.stringify({room_number, guest_name, check_in, check_out, cost_per_night})
         });
 
         if(res.ok) {

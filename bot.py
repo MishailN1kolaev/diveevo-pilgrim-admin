@@ -43,7 +43,8 @@ async def handle_get_bookings(request):
 
 async def handle_add_booking(request):
     data = await request.json()
-    await db.add_booking(data['room_number'], data['guest_name'], data['check_in'], data['check_out'])
+    cost_per_night = data.get('cost_per_night', 0)
+    await db.add_booking(data['room_number'], data['guest_name'], data['check_in'], data['check_out'], cost_per_night)
     return web.json_response({"status": "ok"})
 
 async def handle_delete_booking(request):
@@ -127,6 +128,15 @@ async def handle_web_app_data(message: Message, bot: Bot):
     if data['type'] == 'order':
         # Save to DB
         order_id = await db.save_order(message.from_user.id, data['items'], data['total_price'])
+
+        # Update active booking extras
+        room = data.get('room')
+        if room:
+            try:
+                room_num = int(room)
+                await db.update_booking_extras(room_num, data['total_price'])
+            except ValueError:
+                pass
 
         # Reply to User
         await message.answer(f"✅ Заказ #{order_id} принят! Оплата на кассе.\nСумма: {data['total_price']} ₽")
