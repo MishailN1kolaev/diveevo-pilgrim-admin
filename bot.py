@@ -71,6 +71,57 @@ async def handle_add_booking(request):
 
     return web.json_response({"status": "ok"})
 
+async def handle_update_booking(request):
+    data = await request.json()
+    booking_id = data.get('id')
+    if not booking_id:
+        return web.json_response({"status": "error", "message": "ID missing"}, status=400)
+
+    # Fetch old booking to check for room changes
+    old_booking = await db.get_booking(booking_id)
+    if not old_booking:
+        return web.json_response({"status": "error", "message": "Booking not found"}, status=404)
+
+    new_room_number = data['room_number']
+    phone = data.get('phone')
+
+    # Update DB
+    await db.update_booking(
+        booking_id,
+        new_room_number,
+        data['guest_name'],
+        data['check_in'],
+        data['check_out'],
+        data.get('cost_per_night', 0),
+        phone
+    )
+
+    # Task 1 & 4: Notify user if room changed
+    if str(old_booking['room_number']) != str(new_room_number):
+        # Find user associated with this booking (via phone)
+        # Prioritize the phone in the payload, or fallback to old booking phone
+        target_phone = phone or old_booking['phone']
+        if target_phone:
+            user = await db.get_user_by_phone(target_phone)
+            if user:
+                user_id = user['user_id']
+
+                # Update User's current room context
+                await db.add_user(user_id, user['username'], int(new_room_number))
+
+                # Send Notification
+                bot = request.app['bot']
+                try:
+                    msg_text = (
+                        f"ℹ️ Ваш номер был изменен на {new_room_number}.\n"
+                        f"Весь расчет теперь ведется по этому номеру."
+                    )
+                    await bot.send_message(user_id, msg_text)
+                except Exception as e:
+                    logging.error(f"Failed to notify user {user_id} of room change: {e}")
+
+    return web.json_response({"status": "ok"})
+
 async def handle_delete_booking(request):
     data = await request.json()
     await db.delete_booking(data['id'])
@@ -322,6 +373,7 @@ async def main():
     # API
     app.router.add_get('/api/bookings', handle_get_bookings)
     app.router.add_post('/api/bookings', handle_add_booking)
+    app.router.add_put('/api/bookings', handle_update_booking)
     app.router.add_delete('/api/bookings', handle_delete_booking)
     app.router.add_post('/api/bookings/toggle_cleaning', handle_toggle_cleaning)
 
