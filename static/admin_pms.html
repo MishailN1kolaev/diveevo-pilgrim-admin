@@ -37,7 +37,7 @@
         /* Chessboard Grid */
         .controls { display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center; }
         .grid-container { display: grid; overflow-x: auto; border: 1px solid var(--border-color); position: relative; }
-        .cell { height: 50px; border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 14px; min-width: 50px; color: var(--text-color); }
+        .cell { height: 50px; border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 14px; min-width: 50px; color: var(--text-color); position: relative; }
         .header-cell { background: var(--secondary-bg-color); color: var(--text-color); font-weight: bold; position: sticky; top: 0; z-index: 5; }
         .room-cell { background: var(--secondary-bg-color); color: var(--text-color); font-weight: bold; position: sticky; left: 0; z-index: 6; min-width: 70px; justify-content: flex-start; padding-left: 5px; }
 
@@ -55,7 +55,38 @@
             overflow: hidden;
             white-space: nowrap;
             text-overflow: ellipsis;
+            position: absolute; /* Changed to absolute to overlay */
+            top: 0;
+            left: 0;
         }
+
+        /* Split Cell Styles */
+        .cell.split-cell {
+            display: block; /* reset flex */
+        }
+
+        /* Departing: Top-Left Half */
+        .booking-cell.departing {
+            width: 100%;
+            height: 50%;
+            top: 0;
+            left: 0;
+            border-bottom: 1px solid #fff;
+            box-sizing: border-box;
+            z-index: 2;
+            background: #f0ad4e; /* Orangeish for checkout */
+        }
+
+        /* Arriving: Bottom-Right Half */
+        .booking-cell.arriving {
+            width: 100%;
+            height: 50%;
+            top: 50%;
+            left: 0;
+            z-index: 2;
+            background: var(--button-color);
+        }
+
         .booking-cell.cleaning-needed { background: #ffd700; color: #000; } /* Gold/Yellow */
         .booking-cell.cleaned { background: #4caf50; color: #fff; } /* Green */
 
@@ -123,6 +154,8 @@
         <input type="date" id="b-checkout" onchange="recalcTotal()">
         <label>Гость</label>
         <input type="text" id="b-guest">
+        <label>Телефон</label>
+        <input type="tel" id="b-phone" placeholder="+79001234567">
         <label>Стоимость за сутки (₽)</label>
         <input type="number" id="b-cost-per-night" onchange="recalcTotal()">
 
@@ -149,7 +182,7 @@
     let bookingsData = [];
     let menuData = [];
     let startDate = new Date();
-    const daysToShow = 7; // Changed to 7 days
+    const daysToShow = 7;
 
     // Initialization
     async function init() {
@@ -159,13 +192,9 @@
         renderGrid();
         updateDateHeader();
 
-        // Auto-update every 5 seconds
+        // Auto-update
         setInterval(async () => {
-             // Save current scroll position? The grid rebuilds, so scroll might be lost if we full re-render.
-             // However, for now, simple refresh is requested.
              await fetchBookings();
-             // Also fetch rooms/menu? Not critical usually, but maybe.
-             // Only re-render grid if visible
              if(document.getElementById('bookings').classList.contains('active')) {
                  renderGrid();
              }
@@ -314,8 +343,6 @@
 
     function renderGrid() {
         const grid = document.getElementById('pms-grid');
-        // Don't wipe innerHTML if we want to optimize, but simplified: wipe.
-        // To prevent scroll jumping, we could save scrollLeft.
         const scrollLeft = grid.scrollLeft;
         grid.innerHTML = '';
 
@@ -331,31 +358,30 @@
             grid.appendChild(cell);
         }
 
-        // Rows & Data
-        // Pre-process bookings for O(1) lookup
-        // Map: "room_date" -> booking
+        // Booking Map: room_date -> [bookings]
+        // Support multiple bookings per day
         const bookingMap = {};
+
         bookingsData.forEach(b => {
             const start = new Date(b.check_in);
             const end = new Date(b.check_out);
-
-            // Iterate all days inclusive
-            // Note: usually hotel is night based.
-            // User requirement: "Name on 20, 21, 22 and 23" (CheckIn 20, CheckOut 23).
-            // This means [start, end] inclusive.
-
             let curr = new Date(start);
+
             while(curr <= end) {
                 const dStr = curr.toISOString().split('T')[0];
                 const key = `${b.room_number}_${dStr}`;
 
-                // Check if this is the last day (checkout day)
-                const isLastDay = (curr.getTime() === end.getTime());
+                if(!bookingMap[key]) bookingMap[key] = [];
 
-                bookingMap[key] = {
+                const isStart = (curr.getTime() === start.getTime());
+                const isEnd = (curr.getTime() === end.getTime());
+
+                bookingMap[key].push({
                     booking: b,
-                    isLastDay: isLastDay
-                };
+                    isStart: isStart,
+                    isEnd: isEnd
+                });
+
                 curr.setDate(curr.getDate() + 1);
             }
         });
@@ -370,52 +396,93 @@
                 const cell = createCell('', 'cell');
 
                 const key = `${room.number}_${dateStr}`;
-                const data = bookingMap[key];
+                const bookings = bookingMap[key] || [];
 
-                if (data) {
-                    // Render Booking Cell
-                    const bDiv = document.createElement('div');
-                    bDiv.className = 'booking-cell';
-                    bDiv.innerText = data.booking.guest_name;
+                // Render Logic for Split vs Full
+                // Case 1: Single booking, full day (middle)
+                // Case 2: Single booking, Start (PM checkin)
+                // Case 3: Single booking, End (AM checkout)
+                // Case 4: Overlap (End of A, Start of B)
 
-                    if (data.isLastDay) {
-                        bDiv.classList.add('cleaning-needed');
-                        if (data.booking.is_cleaned) {
-                            bDiv.classList.remove('cleaning-needed');
-                            bDiv.classList.add('cleaned');
-                        }
-                        // Click logic for last day
-                        bDiv.onclick = async (e) => {
-                            e.stopPropagation();
-                            // Toggle cleaning
-                            await fetch('/api/bookings/toggle_cleaning', {
-                                method: 'POST',
-                                headers: {'Content-Type': 'application/json'},
-                                body: JSON.stringify({id: data.booking.id})
-                            });
-                            await fetchBookings();
-                            renderGrid();
-                        };
-                    } else {
-                        // Normal booking day click -> open modal
-                        bDiv.onclick = (e) => {
-                            e.stopPropagation();
-                            openModal(data.booking);
-                        };
-                    }
-                    cell.appendChild(bDiv);
-                    cell.style.padding = '0'; // Remove padding so bar fills cell
+                // To simplify, we just render divs.
+                // If "Full Day", we use width 100%, height 100%.
+                // If "End", we use Top Half? Or standard cleaning view.
+                // If "Start", we use Bottom Half?
+
+                // Actually, let's use simple heuristics:
+                // If we have >1 booking, assume it's a transition day.
+                // Find the one ending today and the one starting today.
+
+                const ending = bookings.find(x => x.isEnd);
+                const starting = bookings.find(x => x.isStart);
+                const ongoing = bookings.find(x => !x.isStart && !x.isEnd);
+
+                if (ongoing) {
+                    // Full day occupation
+                    cell.appendChild(createBookingDiv(ongoing.booking, 'full'));
+                } else if (ending && starting) {
+                    // Transition
+                    cell.classList.add('split-cell');
+                    cell.appendChild(createBookingDiv(ending.booking, 'departing', true));
+                    cell.appendChild(createBookingDiv(starting.booking, 'arriving'));
+                } else if (ending) {
+                    // Only ending (checkout day)
+                    // Normally this is a cleaning day.
+                    // We can show it as departing/cleaning.
+                    // Visually, let's make it full cell but mark as 'departing' style or just standard 'cleaning-needed'
+                    // If we use 'departing' style (half height), it implies availability in PM.
+                    // Let's use half-height to indicate PM is free?
+                    // Or stick to old logic if no new guest.
+                    // Requirement: "show checkout was 12 and checkin is 13".
+                    // So let's use half-height for ending bookings on the last day.
+                    cell.appendChild(createBookingDiv(ending.booking, 'departing', true));
+                } else if (starting) {
+                    // Only starting (checkin day)
+                    cell.appendChild(createBookingDiv(starting.booking, 'arriving'));
                 } else {
-                    // Empty cell click -> add new
-                     cell.onclick = () => openModal(null, room.number, dateStr);
+                    // Empty
+                    cell.onclick = () => openModal(null, room.number, dateStr);
                 }
 
                 grid.appendChild(cell);
             }
         });
 
-        // Restore scroll
         grid.scrollLeft = scrollLeft;
+    }
+
+    function createBookingDiv(booking, type, isCleaningLogic=false) {
+        const div = document.createElement('div');
+        div.className = 'booking-cell';
+        div.innerText = booking.guest_name;
+
+        if (type === 'departing') {
+            div.classList.add('departing');
+            // Cleaning Logic
+             div.classList.add('cleaning-needed');
+             if (booking.is_cleaned) {
+                 div.classList.remove('cleaning-needed');
+                 div.classList.add('cleaned');
+             }
+             div.onclick = async (e) => {
+                 e.stopPropagation();
+                 await fetch('/api/bookings/toggle_cleaning', {
+                     method: 'POST',
+                     headers: {'Content-Type': 'application/json'},
+                     body: JSON.stringify({id: booking.id})
+                 });
+                 await fetchBookings();
+                 renderGrid();
+             };
+        } else if (type === 'arriving') {
+            div.classList.add('arriving');
+            div.onclick = (e) => { e.stopPropagation(); openModal(booking); };
+        } else {
+            // Full
+            div.onclick = (e) => { e.stopPropagation(); openModal(booking); };
+        }
+
+        return div;
     }
 
     function createCell(text, className) {
@@ -431,7 +498,6 @@
         const roomNum = document.getElementById('b-room').value;
         const room = roomsData.find(r => r.number == roomNum);
         if (room) {
-            // Only set if empty or default? For now just override if new booking
             if (!document.getElementById('b-id').value) {
                 document.getElementById('b-cost-per-night').value = room.price;
                 recalcTotal();
@@ -444,7 +510,6 @@
         const checkOut = new Date(document.getElementById('b-checkout').value);
         const costPerNight = parseFloat(document.getElementById('b-cost-per-night').value) || 0;
 
-        // Calculate nights
         let nights = 0;
         if (checkIn && checkOut && checkOut > checkIn) {
             const diff = checkOut - checkIn;
@@ -453,7 +518,6 @@
 
         const roomTotal = nights * costPerNight;
 
-        // Extras come from booking data if editing
         let extras = 0;
         const id = document.getElementById('b-id').value;
         if (id) {
@@ -477,6 +541,7 @@
             document.getElementById('b-checkin').value = booking.check_in;
             document.getElementById('b-checkout').value = booking.check_out;
             document.getElementById('b-guest').value = booking.guest_name;
+            document.getElementById('b-phone').value = booking.phone || '';
             document.getElementById('b-cost-per-night').value = booking.cost_per_night || 0;
 
             btnCancel.style.display = 'block';
@@ -491,8 +556,8 @@
             document.getElementById('b-checkout').value = next.toISOString().split('T')[0];
 
             document.getElementById('b-guest').value = '';
+            document.getElementById('b-phone').value = '';
 
-            // Set default price
             const room = roomsData.find(r => r.number == roomNum);
             document.getElementById('b-cost-per-night').value = room ? room.price : 0;
 
@@ -512,22 +577,12 @@
         const check_in = document.getElementById('b-checkin').value;
         const check_out = document.getElementById('b-checkout').value;
         const guest_name = document.getElementById('b-guest').value;
+        const phone = document.getElementById('b-phone').value;
         const cost_per_night = parseFloat(document.getElementById('b-cost-per-night').value) || 0;
 
         if(!guest_name) return tg.showAlert("Введите имя гостя");
 
         if (id) {
-             // Edit not implemented fully yet (need to delete/recreate or add update API)
-             // For now, we can just delete and create new, but that changes ID.
-             // I'll check if user wants me to implement edit API.
-             // The previous version just alerted.
-             // I'll implement delete-then-create logic for now as MVP,
-             // BUT wait, `extras_total` will be lost if I do that.
-             // So I really should have an update endpoint.
-             // Given I can't change backend easily without step 1, I already did step 1.
-             // But I didn't add UPDATE endpoint.
-             // I will just stick to create new for now and warn user, OR use create to override?
-             // Actually, the backend `add_booking` is just insert.
              alert("Редактирование: удалите старую и создайте новую (для сохранения статистики нужно API обновления)");
              return;
         }
@@ -535,7 +590,14 @@
         const res = await fetch('/api/bookings', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({room_number, guest_name, check_in, check_out, cost_per_night})
+            body: JSON.stringify({
+                room_number,
+                guest_name,
+                check_in,
+                check_out,
+                cost_per_night,
+                phone
+            })
         });
 
         if(res.ok) {

@@ -3,13 +3,16 @@ import logging
 import sys
 import json
 from os import getenv
+import re
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from aiogram.utils.markdown import hbold
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.fsm.context import FSMContext
 from aiohttp import web
 from pathlib import Path
 
@@ -44,7 +47,28 @@ async def handle_get_bookings(request):
 async def handle_add_booking(request):
     data = await request.json()
     cost_per_night = data.get('cost_per_night', 0)
-    await db.add_booking(data['room_number'], data['guest_name'], data['check_in'], data['check_out'], cost_per_night)
+    # Pass phone if present
+    phone = data.get('phone')
+    await db.add_booking(
+        data['room_number'],
+        data['guest_name'],
+        data['check_in'],
+        data['check_out'],
+        cost_per_night,
+        phone=phone
+    )
+
+    # Check if we should create/update a user for this phone
+    if phone:
+        existing_user = await db.get_user_by_phone(phone)
+        if not existing_user:
+            # We can't create a full user without Telegram ID, but we have the booking.
+            # The user will be linked when they join via bot.
+            pass
+        else:
+            # If user exists, ensure their ID is on the booking (add_booking already tries to do this)
+            pass
+
     return web.json_response({"status": "ok"})
 
 async def handle_delete_booking(request):
@@ -92,8 +116,15 @@ async def handle_delete_menu(request):
 
 # --- Bot Handlers ---
 
+class UserState(StatesGroup):
+    waiting_for_phone = State()
+
 @dp.message(CommandStart())
-async def command_start_handler(message: Message) -> None:
+async def command_start_handler(message: Message, state: FSMContext) -> None:
+    # Check if user exists and has phone
+    user = await db.get_user(message.from_user.id)
+
+    # Parse room from deep link if present
     args = message.text.split(' ')
     room = "101"
     if len(args) > 1:
@@ -101,18 +132,72 @@ async def command_start_handler(message: Message) -> None:
         if payload.startswith("room_"):
             room = payload.replace("room_", "")
 
+    # Save payload room to state for later usage
+    await state.update_data(room=room)
+
+    if user and user.get('phone'):
+        # User is fully registered
+        await show_main_menu(message, room)
+    else:
+        # User needs to register phone
+        await message.answer(
+            "Добро пожаловать! Для продолжения, пожалуйста, введите ваш номер телефона (начиная с +7).",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        await state.set_state(UserState.waiting_for_phone)
+
+@dp.message(UserState.waiting_for_phone)
+async def handle_phone_input(message: Message, state: FSMContext):
+    phone = message.text.strip()
+
+    # Basic validation
+    if not re.match(r'^\+7\d{10}$', phone):
+        await message.answer("Неверный формат. Пожалуйста, введите номер в формате +7XXXXXXXXXX")
+        return
+
+    # Check if this phone is already associated with another user (or created by admin without Telegram ID?)
+    # Actually, admin creates bookings with phone, but doesn't create users with Telegram ID.
+    # But we might have a user entry with this phone but DIFFERENT Telegram ID? (Unlikely unless user changed accounts)
+    # Or we might have a user entry with this phone and NULL Telegram ID? (We didn't implement that yet, we just query by phone)
+
+    existing_user_by_phone = await db.get_user_by_phone(phone)
+
+    data = await state.get_data()
+    room = data.get('room', "101")
+
+    if existing_user_by_phone:
+        # If the existing user has a different Telegram ID, we have a conflict or a merge.
+        # If existing_user has the same ID, we are good.
+        if existing_user_by_phone['user_id'] != message.from_user.id:
+            await message.answer("Этот номер уже зарегистрирован на другого пользователя. Обратитесь к администратору.")
+            return
+
+    # Register/Update User
+    # First, ensure user record exists
     await db.add_user(message.from_user.id, message.from_user.full_name, int(room))
+    # Then update phone
+    success = await db.update_user_phone(message.from_user.id, phone)
 
+    if success:
+        # Link any existing bookings that have this phone but no user_id
+        await db.link_bookings_to_user(phone, message.from_user.id)
+
+        await message.answer("Регистрация успешна!")
+        await state.clear()
+        await show_main_menu(message, room)
+    else:
+        await message.answer("Ошибка при сохранении номера.")
+
+async def show_main_menu(message: Message, room: str):
     web_app_url = f"{BASE_URL}/guest?room={room}"
-
     kb = ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🛎 Открыть меню", web_app=WebAppInfo(url=web_app_url))]
         ],
         resize_keyboard=True
     )
+    await message.answer(f"Вы в комнате {room}.", reply_markup=kb)
 
-    await message.answer(f"Добро пожаловать в отель! Вы в комнате {room}.", reply_markup=kb)
 
 @dp.message(Command("admin"))
 async def command_admin_handler(message: Message) -> None:
@@ -155,10 +240,14 @@ async def handle_web_app_data(message: Message, bot: Bot):
         for k, v in data['items'].items():
             items_str += f"- {v['name']} x{v['qty']} ({v['price']*v['qty']}₽)\n"
 
+        # Fetch user phone for admin info
+        user = await db.get_user(message.from_user.id)
+        phone_info = f" ({user['phone']})" if user and user.get('phone') else ""
+
         admin_text = (
             f"🔔 <b>Новый заказ!</b>\n"
             f"Комната: {room}\n"
-            f"Гость: @{message.from_user.username or message.from_user.id}\n\n"
+            f"Гость: @{message.from_user.username or message.from_user.id}{phone_info}\n\n"
             f"{items_str}\n"
             f"<b>Итого: {data['total_price']} ₽</b>"
         )
