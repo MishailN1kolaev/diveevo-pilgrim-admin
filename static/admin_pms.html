@@ -7,14 +7,21 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --primary: #2481cc;
-            --bg: #fff;
-            --sec-bg: #f5f5f5;
-            --border: #ddd;
+            --bg-color: var(--tg-theme-bg-color, #fff);
+            --text-color: var(--tg-theme-text-color, #000);
+            --secondary-bg-color: var(--tg-theme-secondary-bg-color, #f5f5f5);
+            --hint-color: var(--tg-theme-hint-color, #999);
+            --button-color: var(--tg-theme-button-color, #2481cc);
+            --button-text-color: var(--tg-theme-button-text-color, #fff);
+
+            --primary: var(--button-color);
+            --bg: var(--bg-color);
+            --sec-bg: var(--secondary-bg-color);
+            --border: var(--hint-color);
         }
-        body { font-family: sans-serif; margin: 0; padding-bottom: 50px; }
+        body { font-family: sans-serif; margin: 0; padding-bottom: 50px; background-color: var(--bg); color: var(--text-color); }
         .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--sec-bg); position: sticky; top: 0; z-index: 10; }
-        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; border-bottom: 3px solid transparent; }
+        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; border-bottom: 3px solid transparent; color: var(--text-color); }
         .tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: bold; }
 
         .content { display: none; padding: 15px; }
@@ -22,25 +29,25 @@
 
         /* Forms */
         .form-card { background: var(--sec-bg); padding: 15px; border-radius: 8px; margin-bottom: 15px; }
-        input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box; background: var(--bg); color: var(--text-color); }
+        button { width: 100%; padding: 10px; background: var(--primary); color: var(--button-text-color); border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
         button.delete { background: #ff5252; }
 
         /* Lists */
-        .list-item { border: 1px solid var(--border); padding: 10px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .list-item { background: var(--bg); border: 1px solid var(--border); padding: 10px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
         .list-info { flex-grow: 1; }
 
         /* Chessboard Grid */
         .controls { display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center; }
         .grid-container { display: grid; overflow-x: auto; border: 1px solid var(--border); position: relative; }
-        .cell { height: 40px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; min-width: 40px; }
-        .header-cell { background: #eee; font-weight: bold; position: sticky; top: 0; z-index: 5; }
-        .room-cell { background: #eee; font-weight: bold; position: sticky; left: 0; z-index: 6; min-width: 60px; justify-content: flex-start; padding-left: 5px; }
-        .booking-bar { background: #2481cc; color: white; position: absolute; height: 30px; top: 5px; border-radius: 4px; font-size: 10px; padding: 0 5px; line-height: 30px; overflow: hidden; white-space: nowrap; cursor: pointer; z-index: 4; opacity: 0.9; }
+        .cell { height: 40px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; min-width: 40px; color: var(--text-color); }
+        .header-cell { background: var(--sec-bg); color: var(--text-color); font-weight: bold; position: sticky; top: 0; z-index: 5; }
+        .room-cell { background: var(--sec-bg); color: var(--text-color); font-weight: bold; position: sticky; left: 0; z-index: 6; min-width: 60px; justify-content: flex-start; padding-left: 5px; }
+        .booking-bar { background: var(--primary); color: var(--button-text-color); position: absolute; height: 30px; top: 5px; border-radius: 4px; font-size: 10px; padding: 0 5px; line-height: 30px; overflow: hidden; white-space: nowrap; cursor: pointer; z-index: 4; opacity: 0.9; }
 
         .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
         .modal.active { display: flex; }
-        .modal-content { background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 350px; }
+        .modal-content { background: var(--bg); color: var(--text-color); padding: 20px; border-radius: 8px; width: 90%; max-width: 350px; border: 1px solid var(--border); }
     </style>
 </head>
 <body>
@@ -55,7 +62,7 @@
 <div id="bookings" class="content active">
     <div class="controls">
         <button style="width:auto" onclick="changeDate(-7)">◀</button>
-        <span id="current-date-range" style="font-weight:bold"></span>
+        <input type="date" id="date-picker" style="width: auto; margin: 0 10px;" onchange="jumpToDate(this.value)">
         <button style="width:auto" onclick="changeDate(7)">▶</button>
     </div>
     <div id="pms-grid" class="grid-container"></div>
@@ -254,11 +261,20 @@
         renderGrid();
         updateDateHeader();
     }
+
+    function jumpToDate(val) {
+        if (!val) return;
+        startDate = new Date(val);
+        renderGrid();
+        updateDateHeader();
+    }
+
     function updateDateHeader() {
-        const end = new Date(startDate);
-        end.setDate(end.getDate() + daysToShow - 1);
-        document.getElementById('current-date-range').innerText =
-            `${startDate.getDate()}.${startDate.getMonth()+1} - ${end.getDate()}.${end.getMonth()+1}`;
+        const dateInput = document.getElementById('date-picker');
+        const yyyy = startDate.getFullYear();
+        const mm = String(startDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(startDate.getDate()).padStart(2, '0');
+        dateInput.value = `${yyyy}-${mm}-${dd}`;
     }
 
     function renderGrid() {
