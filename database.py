@@ -7,6 +7,7 @@ DB_NAME = "hotel.db"
 
 async def init_db():
     async with aiosqlite.connect(DB_NAME) as db:
+        # Ensure Tables Exist
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id INTEGER PRIMARY KEY,
@@ -41,29 +42,7 @@ async def init_db():
             )
         """)
 
-        # Migrations
-        columns = {
-            'bookings': [
-                ('cost_per_night', 'REAL DEFAULT 0'),
-                ('extras_total', 'REAL DEFAULT 0'),
-                ('is_cleaned', 'BOOLEAN DEFAULT 0'),
-                ('phone', 'TEXT'),
-                ('user_id', 'INTEGER')
-            ],
-            'users': [
-                ('phone', 'TEXT UNIQUE')
-            ]
-        }
-
-        for table, cols in columns.items():
-            for col_name, col_type in cols:
-                try:
-                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-                except Exception as e:
-                    # logging.debug(f"Column {col_name} in {table} likely exists: {e}")
-                    pass
-
-        # New Tables
+        # New Tables (Created fresh if not exist, so keys are there)
         await db.execute("""
             CREATE TABLE IF NOT EXISTS menu_items (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,21 +71,53 @@ async def init_db():
                 created_at TEXT
             )
         """)
+
+        # Migrations: Explicitly check for columns and add if missing
+        columns_to_check = {
+            'bookings': [
+                ('cost_per_night', 'REAL DEFAULT 0'),
+                ('extras_total', 'REAL DEFAULT 0'),
+                ('is_cleaned', 'BOOLEAN DEFAULT 0'),
+                ('phone', 'TEXT'),
+                ('user_id', 'INTEGER')
+            ],
+            'users': [
+                ('phone', 'TEXT')
+            ]
+        }
+
+        for table, cols in columns_to_check.items():
+            # Get existing columns
+            try:
+                async with db.execute(f"PRAGMA table_info({table})") as cursor:
+                    existing_cols = [row[1] for row in await cursor.fetchall()]
+
+                for col_name, col_def in cols:
+                    if col_name not in existing_cols:
+                        try:
+                            # logging.info(f"Migrating {table}: Adding {col_name}")
+                            await db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}")
+                        except Exception as e:
+                            logging.error(f"Failed to add column {col_name} to {table}: {e}")
+            except Exception as e:
+                logging.error(f"Failed to inspect table {table}: {e}")
+
+        # Post-migration: Add indices
+        try:
+             await db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_phone ON users(phone)")
+        except Exception as e:
+             logging.error(f"Failed to create index: {e}")
+
         await db.commit()
 
 # --- User ---
 async def add_user(user_id, username, current_room):
     async with aiosqlite.connect(DB_NAME) as db:
-        # Update existing or insert new.
-        # Note: This overwrites phone if it was NULL, but if we want to keep existing phone?
-        # We should probably check if user exists.
-
         # Check if user exists
-        async with db.execute("SELECT phone FROM users WHERE user_id = ?", (user_id,)) as cursor:
+        async with db.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,)) as cursor:
             row = await cursor.fetchone()
 
         if row:
-            # Update info but keep phone if not passed (here we don't pass phone in this func)
             await db.execute("""
                 UPDATE users SET username = ?, current_room = ? WHERE user_id = ?
             """, (username, current_room, user_id))
@@ -129,20 +140,31 @@ async def update_user_phone(user_id, phone):
 async def get_user(user_id):
     async with aiosqlite.connect(DB_NAME) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+        # Ensure we don't fail if phone column is somehow missing (though init_db should fix it)
+        try:
+            async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+        except Exception:
+            # Fallback if column missing, try basic select (should not happen with proper init_db)
+             async with db.execute("SELECT user_id, username, current_room FROM users WHERE user_id = ?", (user_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+        return None
 
 async def get_user_by_phone(phone):
     async with aiosqlite.connect(DB_NAME) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM users WHERE phone = ?", (phone,)) as cursor:
-            row = await cursor.fetchone()
-            if row:
-                return dict(row)
-            return None
+        try:
+            async with db.execute("SELECT * FROM users WHERE phone = ?", (phone,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    return dict(row)
+        except aiosqlite.OperationalError:
+            return None # Column likely missing
+        return None
 
 # --- Orders ---
 async def save_order(user_id, items, total_price):
@@ -166,6 +188,8 @@ async def add_booking(room_number, guest_name, check_in, check_out, cost_per_nig
             user_id = u['user_id']
 
     async with aiosqlite.connect(DB_NAME) as db:
+        # Prepare query based on whether phone/user_id are available (handled by init_db, but safe check?)
+        # Assuming init_db ran successfully.
         cursor = await db.execute("""
             INSERT INTO bookings (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id)
             VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -175,16 +199,17 @@ async def add_booking(room_number, guest_name, check_in, check_out, cost_per_nig
 
 async def link_bookings_to_user(phone, user_id):
     async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("""
-            UPDATE bookings SET user_id = ? WHERE phone = ?
-        """, (user_id, phone))
-        await db.commit()
+        try:
+            await db.execute("""
+                UPDATE bookings SET user_id = ? WHERE phone = ?
+            """, (user_id, phone))
+            await db.commit()
+        except Exception:
+            pass
 
 async def update_booking_extras(room_number, amount):
     today = datetime.now().strftime("%Y-%m-%d")
     async with aiosqlite.connect(DB_NAME) as db:
-        # Find active booking for this room
-        # Simple logic: check_in <= today < check_out
         async with db.execute("""
             SELECT id, extras_total FROM bookings
             WHERE room_number = ? AND check_in <= ? AND check_out > ?

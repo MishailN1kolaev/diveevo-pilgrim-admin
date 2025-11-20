@@ -121,9 +121,6 @@ class UserState(StatesGroup):
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
-    # Check if user exists and has phone
-    user = await db.get_user(message.from_user.id)
-
     # Parse room from deep link if present
     args = message.text.split(' ')
     room = "101"
@@ -134,6 +131,15 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
 
     # Save payload room to state for later usage
     await state.update_data(room=room)
+
+    # Bypass check for Admin
+    if message.from_user.id == ADMIN_ID:
+        await db.add_user(message.from_user.id, message.from_user.full_name, int(room))
+        await show_main_menu(message, room)
+        return
+
+    # Check if user exists and has phone
+    user = await db.get_user(message.from_user.id)
 
     if user and user.get('phone'):
         # User is fully registered
@@ -155,19 +161,12 @@ async def handle_phone_input(message: Message, state: FSMContext):
         await message.answer("Неверный формат. Пожалуйста, введите номер в формате +7XXXXXXXXXX")
         return
 
-    # Check if this phone is already associated with another user (or created by admin without Telegram ID?)
-    # Actually, admin creates bookings with phone, but doesn't create users with Telegram ID.
-    # But we might have a user entry with this phone but DIFFERENT Telegram ID? (Unlikely unless user changed accounts)
-    # Or we might have a user entry with this phone and NULL Telegram ID? (We didn't implement that yet, we just query by phone)
-
     existing_user_by_phone = await db.get_user_by_phone(phone)
 
     data = await state.get_data()
     room = data.get('room', "101")
 
     if existing_user_by_phone:
-        # If the existing user has a different Telegram ID, we have a conflict or a merge.
-        # If existing_user has the same ID, we are good.
         if existing_user_by_phone['user_id'] != message.from_user.id:
             await message.answer("Этот номер уже зарегистрирован на другого пользователя. Обратитесь к администратору.")
             return
