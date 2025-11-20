@@ -157,7 +157,11 @@
 </div>
 
 <!-- Food Tab -->
-<div id="food" class="content active"></div>
+<div id="food" class="content active">
+    <div id="breakfast-banner" style="grid-column: 1/-1; background: var(--secondary-bg); padding: 10px; border-radius: 8px; margin-bottom: 10px; font-size: 0.9em; border-left: 4px solid var(--button-color);">
+        ℹ️ Заказ завтрака осуществляется на следующий день. Прием заявок до 19:00.
+    </div>
+</div>
 
 <!-- Drinks Tab -->
 <div id="drinks" class="content"></div>
@@ -228,7 +232,11 @@
     function renderItems() {
         ['food', 'drinks', 'service'].forEach(cat => {
             const container = document.getElementById(cat);
+            // keep the banner if it exists in food tab
+            const banner = container.querySelector('#breakfast-banner');
             container.innerHTML = '';
+            if(banner) container.appendChild(banner);
+
             const items = menuItems.filter(i => i.category === cat);
 
             if(items.length === 0) {
@@ -272,6 +280,16 @@
 
     function addToCart(id) {
         const item = menuItems.find(i => i.id === id);
+
+        // Breakfast logic
+        if (item.name.toLowerCase().includes('завтрак')) {
+            const now = new Date();
+            if (now.getHours() >= 19) {
+                tg.showAlert("Заявки на завтрак принимаются до 19:00 текущего дня.");
+                return;
+            }
+        }
+
         if (cart[id]) {
             cart[id].qty++;
         } else {
