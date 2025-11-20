@@ -11,7 +11,6 @@ from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.markdown import hbold
 from aiohttp import web
-from pathlib import Path
 
 import database as db
 
@@ -26,13 +25,11 @@ dp = Dispatcher()
 
 # --- Web Server Handlers ---
 
-BASE_DIR = Path(__file__).resolve().parent
-
 async def handle_guest_page(request):
-    return web.FileResponse(BASE_DIR / 'static/guest_index.html')
+    return web.FileResponse('./static/guest_index.html')
 
 async def handle_admin_page(request):
-    return web.FileResponse(BASE_DIR / 'static/admin_pms.html')
+    return web.FileResponse('./static/admin_pms.html')
 
 async def handle_get_bookings(request):
     bookings = await db.get_bookings()
@@ -43,10 +40,6 @@ async def handle_get_bookings(request):
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
-    if message.from_user.id == ADMIN_ID:
-        await command_admin_handler(message)
-        return
-
     args = message.text.split(' ')
     room = "101"
     if len(args) > 1:
