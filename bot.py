@@ -8,7 +8,7 @@ from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, WebAppInfo, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.utils.markdown import hbold
 from aiohttp import web
 from pathlib import Path
@@ -44,28 +44,7 @@ async def handle_get_bookings(request):
 async def handle_add_booking(request):
     data = await request.json()
     cost_per_night = data.get('cost_per_night', 0)
-    paid_amount = data.get('paid_amount', 0)
-    await db.add_booking(data['room_number'], data['guest_name'], data['check_in'], data['check_out'], cost_per_night, paid_amount)
-    return web.json_response({"status": "ok"})
-
-async def handle_update_booking(request):
-    data = await request.json()
-    booking_id = data.get('id')
-    if not booking_id:
-        return web.json_response({"status": "error", "message": "ID required"}, status=400)
-
-    cost_per_night = data.get('cost_per_night', 0)
-    paid_amount = data.get('paid_amount', 0)
-
-    await db.update_booking(
-        booking_id,
-        data['room_number'],
-        data['guest_name'],
-        data['check_in'],
-        data['check_out'],
-        cost_per_night,
-        paid_amount
-    )
+    await db.add_booking(data['room_number'], data['guest_name'], data['check_in'], data['check_out'], cost_per_night)
     return web.json_response({"status": "ok"})
 
 async def handle_delete_booking(request):
@@ -105,91 +84,27 @@ async def handle_delete_menu(request):
 
 # --- Bot Handlers ---
 
-async def show_room_selection(message: Message):
-    rooms = await db.get_rooms()
-
-    if not rooms:
-        await message.answer("Нет доступных номеров. Пожалуйста, свяжитесь с администратором.")
-        return
-
-    # Create inline keyboard with rooms
-    keyboard = []
-    row = []
-    for room in rooms:
-        room_num = room['number']
-        btn = InlineKeyboardButton(text=f"№{room_num}", callback_data=f"select_room_{room_num}")
-        row.append(btn)
-        if len(row) == 3: # 3 buttons per row
-            keyboard.append(row)
-            row = []
-    if row:
-        keyboard.append(row)
-
-    kb = InlineKeyboardMarkup(inline_keyboard=keyboard)
-    await message.answer("Пожалуйста, выберите ваш номер:", reply_markup=kb)
-
-@dp.callback_query(F.data.startswith("select_room_"))
-async def room_selection_handler(callback: CallbackQuery):
-    room_num = callback.data.split("_")[-1]
-
-    # Save user with selected room
-    await db.add_user(callback.from_user.id, callback.from_user.full_name, int(room_num))
-
-    web_app_url = f"{BASE_URL}/guest?room={room_num}"
-    kb = ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🛎 Открыть меню", web_app=WebAppInfo(url=web_app_url))],
-            [KeyboardButton(text="🔄 Сменить комнату")]
-        ],
-        resize_keyboard=True
-    )
-
-    await callback.message.delete()
-    await callback.message.answer(f"Добро пожаловать в отель! Вы выбрали комнату {room_num}.", reply_markup=kb)
-    await callback.answer()
-
-@dp.message(F.text == "🔄 Сменить комнату")
-async def change_room_handler(message: Message):
-    await show_room_selection(message)
-
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
     args = message.text.split(' ')
-
-    # If room is passed in deep link
+    room = "101"
     if len(args) > 1:
         payload = args[1]
         if payload.startswith("room_"):
             room = payload.replace("room_", "")
-            await db.add_user(message.from_user.id, message.from_user.full_name, int(room))
 
-            web_app_url = f"{BASE_URL}/guest?room={room}"
-            kb = ReplyKeyboardMarkup(
-                keyboard=[
-                    [KeyboardButton(text="🛎 Открыть меню", web_app=WebAppInfo(url=web_app_url))],
-                    [KeyboardButton(text="🔄 Сменить комнату")]
-                ],
-                resize_keyboard=True
-            )
-            await message.answer(f"Добро пожаловать в отель! Вы в комнате {room}.", reply_markup=kb)
-            return
+    await db.add_user(message.from_user.id, message.from_user.full_name, int(room))
 
-    # Check if user already has a room
-    user = await db.get_user(message.from_user.id)
-    if user and user['current_room']:
-        room = user['current_room']
-        web_app_url = f"{BASE_URL}/guest?room={room}"
-        kb = ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="🛎 Открыть меню", web_app=WebAppInfo(url=web_app_url))],
-                [KeyboardButton(text="🔄 Сменить комнату")]
-            ],
-            resize_keyboard=True
-        )
-        await message.answer(f"С возвращением! Вы в комнате {room}.", reply_markup=kb)
-    else:
-        # Offer room selection
-        await show_room_selection(message)
+    web_app_url = f"{BASE_URL}/guest?room={room}"
+
+    kb = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🛎 Открыть меню", web_app=WebAppInfo(url=web_app_url))]
+        ],
+        resize_keyboard=True
+    )
+
+    await message.answer(f"Добро пожаловать в отель! Вы в комнате {room}.", reply_markup=kb)
 
 @dp.message(Command("admin"))
 async def command_admin_handler(message: Message) -> None:
@@ -305,7 +220,6 @@ async def main():
     # API
     app.router.add_get('/api/bookings', handle_get_bookings)
     app.router.add_post('/api/bookings', handle_add_booking)
-    app.router.add_put('/api/bookings', handle_update_booking)
     app.router.add_delete('/api/bookings', handle_delete_booking)
 
     app.router.add_get('/api/rooms', handle_get_rooms)
