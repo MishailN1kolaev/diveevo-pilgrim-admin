@@ -19,7 +19,7 @@ TOKEN = "8353595718:AAEN6_8rF3feUhWOzgulM2Ns_HLYI2c45bw" # Placeholder
 ADMIN_ID = int(getenv("ADMIN_ID", 627977881))
 WEB_SERVER_HOST = "0.0.0.0"
 WEB_SERVER_PORT = 8080
-BASE_URL = "http://localhost:8080"
+BASE_URL = "https://divinely-golden-potoroo.cloudpub.ru/"
 
 dp = Dispatcher()
 
