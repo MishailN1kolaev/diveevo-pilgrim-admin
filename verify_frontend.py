@@ -8,6 +8,9 @@ async def run():
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
 
+        # Handle dialogs
+        page.on("dialog", lambda dialog: asyncio.create_task(dialog.accept()))
+
         # Go to admin panel
         await page.goto(f"{BASE_URL}/admin")
 
