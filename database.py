@@ -32,7 +32,8 @@ async def init_db():
                 check_out TEXT,
                 status TEXT DEFAULT 'booked',
                 cost_per_night REAL DEFAULT 0,
-                extras_total REAL DEFAULT 0
+                extras_total REAL DEFAULT 0,
+                is_cleaned BOOLEAN DEFAULT 0
             )
         """)
 
@@ -43,6 +44,10 @@ async def init_db():
             pass
         try:
             await db.execute("ALTER TABLE bookings ADD COLUMN extras_total REAL DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE bookings ADD COLUMN is_cleaned BOOLEAN DEFAULT 0")
         except Exception:
             pass
 
@@ -148,6 +153,18 @@ async def delete_booking(booking_id):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DELETE FROM bookings WHERE id = ?", (booking_id,))
         await db.commit()
+
+async def toggle_booking_cleaning_status(booking_id):
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute("SELECT is_cleaned FROM bookings WHERE id = ?", (booking_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                current_status = row[0]
+                new_status = 0 if current_status else 1
+                await db.execute("UPDATE bookings SET is_cleaned = ? WHERE id = ?", (new_status, booking_id))
+                await db.commit()
+                return new_status
+    return None
 
 # --- Menu ---
 async def add_menu_item(name, price, description, category):
