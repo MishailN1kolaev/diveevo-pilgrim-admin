@@ -121,6 +121,11 @@ class UserState(StatesGroup):
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message, state: FSMContext) -> None:
+    # Check if user is admin
+    if message.from_user.id == ADMIN_ID:
+        await show_main_menu(message, "101")
+        return
+
     # Check if user exists and has phone
     user = await db.get_user(message.from_user.id)
 
