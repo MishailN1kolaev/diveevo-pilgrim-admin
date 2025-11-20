@@ -52,6 +52,14 @@ async def handle_delete_booking(request):
     await db.delete_booking(data['id'])
     return web.json_response({"status": "ok"})
 
+async def handle_toggle_cleaning(request):
+    data = await request.json()
+    booking_id = data.get('id')
+    if booking_id:
+        new_status = await db.toggle_booking_cleaning_status(booking_id)
+        return web.json_response({"status": "ok", "is_cleaned": new_status})
+    return web.json_response({"status": "error"}, status=400)
+
 # Rooms
 async def handle_get_rooms(request):
     rooms = await db.get_rooms()
@@ -221,6 +229,7 @@ async def main():
     app.router.add_get('/api/bookings', handle_get_bookings)
     app.router.add_post('/api/bookings', handle_add_booking)
     app.router.add_delete('/api/bookings', handle_delete_booking)
+    app.router.add_post('/api/bookings/toggle_cleaning', handle_toggle_cleaning)
 
     app.router.add_get('/api/rooms', handle_get_rooms)
     app.router.add_post('/api/rooms', handle_add_room)
