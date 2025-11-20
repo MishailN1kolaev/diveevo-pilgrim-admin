@@ -34,10 +34,52 @@ async def handle_guest_page(request):
 async def handle_admin_page(request):
     return web.FileResponse(BASE_DIR / 'static' / 'admin_pms.html')
 
+# --- API Endpoints ---
+
+# Bookings
 async def handle_get_bookings(request):
     bookings = await db.get_bookings()
-    # Convert rows to dicts if not already
     return web.json_response([dict(b) for b in bookings])
+
+async def handle_add_booking(request):
+    data = await request.json()
+    await db.add_booking(data['room_number'], data['guest_name'], data['check_in'], data['check_out'])
+    return web.json_response({"status": "ok"})
+
+async def handle_delete_booking(request):
+    data = await request.json()
+    await db.delete_booking(data['id'])
+    return web.json_response({"status": "ok"})
+
+# Rooms
+async def handle_get_rooms(request):
+    rooms = await db.get_rooms()
+    return web.json_response([dict(r) for r in rooms])
+
+async def handle_add_room(request):
+    data = await request.json()
+    await db.add_room(data['number'], data['type'], data['price'], "")
+    return web.json_response({"status": "ok"})
+
+async def handle_delete_room(request):
+    data = await request.json()
+    await db.delete_room(data['id'])
+    return web.json_response({"status": "ok"})
+
+# Menu
+async def handle_get_menu(request):
+    menu = await db.get_menu_items()
+    return web.json_response([dict(m) for m in menu])
+
+async def handle_add_menu(request):
+    data = await request.json()
+    await db.add_menu_item(data['name'], data['price'], "", data['category'])
+    return web.json_response({"status": "ok"})
+
+async def handle_delete_menu(request):
+    data = await request.json()
+    await db.delete_menu_item(data['id'])
+    return web.json_response({"status": "ok"})
 
 # --- Bot Handlers ---
 
@@ -72,7 +114,7 @@ async def command_admin_handler(message: Message) -> None:
     web_app_url = f"{BASE_URL}/admin"
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="📅 Шахматка бронирований", web_app=WebAppInfo(url=web_app_url))]
+            [KeyboardButton(text="📅 PMS Панель", web_app=WebAppInfo(url=web_app_url))]
         ],
         resize_keyboard=True
     )
@@ -83,57 +125,100 @@ async def handle_web_app_data(message: Message, bot: Bot):
     data = json.loads(message.web_app_data.data)
 
     if data['type'] == 'order':
+        # Save to DB
         order_id = await db.save_order(message.from_user.id, data['items'], data['total_price'])
-        await message.answer(f"Заказ #{order_id} принят! Сумма: {data['total_price']} ₽")
+
+        # Reply to User
+        await message.answer(f"✅ Заказ #{order_id} принят! Оплата на кассе.\nСумма: {data['total_price']} ₽")
+
+        # Notify Admin
+        room = data.get('room', '???')
+        items_str = ""
+        for k, v in data['items'].items():
+            items_str += f"- {v['name']} x{v['qty']} ({v['price']*v['qty']}₽)\n"
+
+        admin_text = (
+            f"🔔 <b>Новый заказ!</b>\n"
+            f"Комната: {room}\n"
+            f"Гость: @{message.from_user.username or message.from_user.id}\n\n"
+            f"{items_str}\n"
+            f"<b>Итого: {data['total_price']} ₽</b>"
+        )
+        try:
+            await bot.send_message(ADMIN_ID, admin_text)
+        except Exception as e:
+            logging.error(f"Failed to notify admin: {e}")
 
     elif data['type'] == 'feedback':
-        rating = data['rating']
-        if rating >= 4:
-            await message.answer("Спасибо! Оставьте отзыв на картах.")
+        # Save Review
+        await db.add_review(message.from_user.id, data['rating'], data['text'])
+
+        # Reply to User
+        if data['rating'] >= 4:
+            await message.answer("Спасибо за высокую оценку! Будем рады видеть вас снова.")
         else:
-            await message.answer("Простите! Передали директору.")
+            await message.answer("Спасибо за отзыв. Мы обязательно примем меры.")
 
-    elif data['type'] == 'booking_create':
-        await db.add_booking(
-            data['room_number'],
-            data['guest_name'],
-            data['check_in'],
-            data['check_out']
+        # Notify Admin
+        admin_text = (
+            f"💬 <b>Новый отзыв!</b>\n"
+            f"От: @{message.from_user.username}\n"
+            f"Оценка: {'⭐' * data['rating']}\n"
+            f"Текст: {data['text']}"
         )
-        await message.answer(f"✅ Бронь создана: Комната {data['room_number']}, {data['guest_name']}")
-
-    elif data['type'] == 'booking_cancel':
-        await db.delete_booking(data['booking_id'])
-        await message.answer(f"❌ Бронь #{data['booking_id']} удалена")
+        try:
+            await bot.send_message(ADMIN_ID, admin_text)
+        except Exception as e:
+            logging.error(f"Failed to notify admin: {e}")
 
 # --- Main Execution ---
 
 async def start_bot_safely(bot):
     try:
-        # Verify token logic usually happens here.
-        # We skip actual polling if token is invalid to keep server alive for demo
         await dp.start_polling(bot)
     except Exception as e:
-        logging.error(f"Bot polling failed (expected in demo without valid token): {e}")
+        logging.error(f"Bot polling failed: {e}")
 
 async def on_startup(app):
     await db.init_db()
-    # Start polling in background
+    # Seed basic data if empty
+    rooms = await db.get_rooms()
+    if not rooms:
+        await db.add_room(101, "Standard", 3000, "")
+        await db.add_room(102, "Standard", 3000, "")
+        await db.add_room(201, "Luxe", 5000, "")
+
+    menu = await db.get_menu_items()
+    if not menu:
+        await db.add_menu_item("Завтрак Континентальный", 500, "", "food")
+        await db.add_menu_item("Кофе", 150, "", "drinks")
+
     asyncio.create_task(start_bot_safely(app['bot']))
 
 async def main():
     logging.basicConfig(level=logging.INFO)
 
-    # Setup Bot
     bot = Bot(token=TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
-    # Setup Web Server
     app = web.Application()
     app['bot'] = bot
 
+    # Routes
     app.router.add_get('/guest', handle_guest_page)
     app.router.add_get('/admin', handle_admin_page)
+
+    # API
     app.router.add_get('/api/bookings', handle_get_bookings)
+    app.router.add_post('/api/bookings', handle_add_booking)
+    app.router.add_delete('/api/bookings', handle_delete_booking)
+
+    app.router.add_get('/api/rooms', handle_get_rooms)
+    app.router.add_post('/api/rooms', handle_add_room)
+    app.router.add_delete('/api/rooms', handle_delete_room)
+
+    app.router.add_get('/api/menu', handle_get_menu)
+    app.router.add_post('/api/menu', handle_add_menu)
+    app.router.add_delete('/api/menu', handle_delete_menu)
 
     app.on_startup.append(on_startup)
 
@@ -144,7 +229,6 @@ async def main():
 
     print(f"Server started at {BASE_URL}")
 
-    # Keep alive
     while True:
         await asyncio.sleep(3600)
 

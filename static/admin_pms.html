@@ -3,151 +3,110 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PMS Шахматка</title>
+    <title>PMS Админ Панель</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --cell-height: 50px;
-            --cell-width: 80px;
-            --header-bg: #f0f0f0;
-            --border-color: #ccc;
-            --free-color: #e8f5e9;
-            --booked-color: #ffebee;
-            --today-color: #e3f2fd;
+            --primary: #2481cc;
+            --bg: #fff;
+            --sec-bg: #f5f5f5;
+            --border: #ddd;
         }
-        body {
-            margin: 0;
-            font-family: sans-serif;
-            overflow-x: auto;
-        }
-        .grid-container {
-            display: grid;
-            /* grid-template-columns defined in JS */
-            border-top: 1px solid var(--border-color);
-            border-left: 1px solid var(--border-color);
-        }
-        .cell {
-            border-right: 1px solid var(--border-color);
-            border-bottom: 1px solid var(--border-color);
-            height: var(--cell-height);
-            min-width: var(--cell-width);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 12px;
-            position: relative;
-            box-sizing: border-box;
-        }
-        .header-cell {
-            background: var(--header-bg);
-            font-weight: bold;
-            position: sticky;
-            top: 0;
-            z-index: 2;
-        }
-        .room-cell {
-            background: var(--header-bg);
-            font-weight: bold;
-            position: sticky;
-            left: 0;
-            z-index: 2;
-            min-width: 50px;
-        }
-        .booking-block {
-            background: #ff5252;
-            color: white;
-            position: absolute;
-            top: 2px;
-            bottom: 2px;
-            left: 2px;
-            right: 2px;
-            border-radius: 4px;
-            padding: 2px;
-            font-size: 10px;
-            overflow: hidden;
-            white-space: nowrap;
-            text-overflow: ellipsis;
-            cursor: pointer;
-            z-index: 1;
-        }
-        .free-cell {
-            background: var(--free-color);
-            cursor: pointer;
-        }
-        .free-cell:hover {
-            background: #c8e6c9;
-        }
+        body { font-family: sans-serif; margin: 0; padding-bottom: 50px; }
+        .tabs { display: flex; border-bottom: 1px solid var(--border); background: var(--sec-bg); position: sticky; top: 0; z-index: 10; }
+        .tab { flex: 1; padding: 15px; text-align: center; cursor: pointer; border-bottom: 3px solid transparent; }
+        .tab.active { border-bottom-color: var(--primary); color: var(--primary); font-weight: bold; }
 
-        /* Modal */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(0,0,0,0.5);
-            z-index: 100;
-            align-items: center;
-            justify-content: center;
-        }
-        .modal.active {
-            display: flex;
-        }
-        .modal-content {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            width: 80%;
-            max-width: 300px;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label { display: block; margin-bottom: 5px; }
-        input { width: 100%; padding: 8px; box-sizing: border-box; }
-        .btn-group { display: flex; gap: 10px; margin-top: 20px; }
-        button { flex: 1; padding: 10px; cursor: pointer; }
+        .content { display: none; padding: 15px; }
+        .content.active { display: block; }
+
+        /* Forms */
+        .form-card { background: var(--sec-bg); padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        input, select, textarea { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid var(--border); border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background: var(--primary); color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        button.delete { background: #ff5252; }
+
+        /* Lists */
+        .list-item { border: 1px solid var(--border); padding: 10px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
+        .list-info { flex-grow: 1; }
+
+        /* Chessboard Grid */
+        .controls { display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center; }
+        .grid-container { display: grid; overflow-x: auto; border: 1px solid var(--border); position: relative; }
+        .cell { height: 40px; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; min-width: 40px; }
+        .header-cell { background: #eee; font-weight: bold; position: sticky; top: 0; z-index: 5; }
+        .room-cell { background: #eee; font-weight: bold; position: sticky; left: 0; z-index: 6; min-width: 60px; justify-content: flex-start; padding-left: 5px; }
+        .booking-bar { background: #2481cc; color: white; position: absolute; height: 30px; top: 5px; border-radius: 4px; font-size: 10px; padding: 0 5px; line-height: 30px; overflow: hidden; white-space: nowrap; cursor: pointer; z-index: 4; opacity: 0.9; }
+
+        .modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 100; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; padding: 20px; border-radius: 8px; width: 90%; max-width: 350px; }
     </style>
 </head>
 <body>
 
-<div id="pms-grid" class="grid-container"></div>
-
-<!-- Create Modal -->
-<div id="create-modal" class="modal">
-    <div class="modal-content">
-        <h3>Новая бронь</h3>
-        <div class="form-group">
-            <label>Комната</label>
-            <input type="text" id="new-room" readonly>
-        </div>
-        <div class="form-group">
-            <label>Дата заезда</label>
-            <input type="date" id="new-checkin" readonly>
-        </div>
-        <div class="form-group">
-            <label>Дата выезда</label>
-            <input type="date" id="new-checkout">
-        </div>
-        <div class="form-group">
-            <label>Гость</label>
-            <input type="text" id="new-guest" placeholder="Имя">
-        </div>
-        <div class="btn-group">
-            <button onclick="closeModal('create-modal')">Отмена</button>
-            <button onclick="submitBooking()" style="background:#4caf50; color:white">Создать</button>
-        </div>
-    </div>
+<div class="tabs">
+    <div class="tab active" onclick="showTab('bookings')">📅 Бронь</div>
+    <div class="tab" onclick="showTab('rooms')">🛏 Номера</div>
+    <div class="tab" onclick="showTab('menu')">🍔 Меню</div>
 </div>
 
-<!-- Details Modal -->
-<div id="details-modal" class="modal">
+<!-- Bookings Tab -->
+<div id="bookings" class="content active">
+    <div class="controls">
+        <button style="width:auto" onclick="changeDate(-7)">◀</button>
+        <span id="current-date-range" style="font-weight:bold"></span>
+        <button style="width:auto" onclick="changeDate(7)">▶</button>
+    </div>
+    <div id="pms-grid" class="grid-container"></div>
+</div>
+
+<!-- Rooms Tab -->
+<div id="rooms" class="content">
+    <div class="form-card">
+        <h3>Добавить номер</h3>
+        <input type="number" id="room-number" placeholder="Номер (101)">
+        <input type="text" id="room-type" placeholder="Тип (Люкс)">
+        <input type="number" id="room-price" placeholder="Цена">
+        <button onclick="addRoom()">Добавить</button>
+    </div>
+    <div id="rooms-list"></div>
+</div>
+
+<!-- Menu Tab -->
+<div id="menu" class="content">
+    <div class="form-card">
+        <h3>Добавить блюдо</h3>
+        <input type="text" id="menu-name" placeholder="Название">
+        <input type="number" id="menu-price" placeholder="Цена">
+        <select id="menu-category">
+            <option value="food">Еда</option>
+            <option value="drinks">Напитки</option>
+            <option value="service">Сервис</option>
+        </select>
+        <button onclick="addMenuItem()">Добавить</button>
+    </div>
+    <div id="menu-list"></div>
+</div>
+
+<!-- Modals -->
+<div id="booking-modal" class="modal">
     <div class="modal-content">
-        <h3>Бронь #<span id="det-id"></span></h3>
-        <p><b>Гость:</b> <span id="det-guest"></span></p>
-        <p><b>Даты:</b> <span id="det-dates"></span></p>
-        <div class="btn-group">
-            <button onclick="closeModal('details-modal')">Закрыть</button>
-            <button onclick="cancelBooking()" style="background:#f44336; color:white">Отменить</button>
+        <h3 id="modal-title">Бронирование</h3>
+        <input type="hidden" id="b-id">
+        <label>Комната</label>
+        <select id="b-room"></select>
+        <label>Заезд</label>
+        <input type="date" id="b-checkin">
+        <label>Выезд</label>
+        <input type="date" id="b-checkout">
+        <label>Гость</label>
+        <input type="text" id="b-guest">
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <button class="delete" id="btn-cancel" onclick="deleteBooking()" style="display:none">Удалить</button>
+            <button onclick="saveBooking()">Сохранить</button>
         </div>
+        <button onclick="closeModal()" style="background:#ccc; margin-top:10px">Закрыть</button>
     </div>
 </div>
 
@@ -155,159 +114,340 @@
     const tg = window.Telegram.WebApp;
     tg.expand();
 
-    const rooms = [101, 102, 103, 104, 105]; // Mock rooms for MVP
-    const daysToShow = 7;
-    let bookings = [];
-    let startDay = new Date();
+    // State
+    let roomsData = [];
+    let bookingsData = [];
+    let menuData = [];
+    let startDate = new Date();
+    const daysToShow = 14; // 2 weeks view
 
+    // Initialization
+    async function init() {
+        await Promise.all([fetchRooms(), fetchMenu(), fetchBookings()]);
+        renderRooms();
+        renderMenu();
+        renderGrid();
+        updateDateHeader();
+    }
+
+    // API Calls
+    async function fetchRooms() {
+        const res = await fetch('/api/rooms');
+        if(res.ok) roomsData = await res.json();
+    }
+    async function fetchMenu() {
+        const res = await fetch('/api/menu');
+        if(res.ok) menuData = await res.json();
+    }
     async function fetchBookings() {
-        try {
-            const response = await fetch('/api/bookings');
-            bookings = await response.json();
-            renderGrid();
-        } catch (e) {
-            console.error("Failed to fetch", e);
-            // Use fake data if fetch fails (dev mode)
-             bookings = [
-                {id: 1, room_number: 101, guest_name: "Ivan", check_in: formatDate(new Date()), check_out: formatDate(addDays(new Date(), 2)), status: 'booked'}
-             ];
-             renderGrid();
-        }
+        const res = await fetch('/api/bookings');
+        if(res.ok) bookingsData = await res.json();
     }
 
-    function addDays(date, days) {
-        const result = new Date(date);
-        result.setDate(result.getDate() + days);
-        return result;
+    // --- Tabs ---
+    function showTab(id) {
+        document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
+        document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        document.querySelector(`.tab[onclick="showTab('${id}')"]`).classList.add('active');
     }
 
-    function formatDate(date) {
-        return date.toISOString().split('T')[0];
+    // --- Rooms Management ---
+    function renderRooms() {
+        const list = document.getElementById('rooms-list');
+        list.innerHTML = '';
+        roomsData.forEach(r => {
+            const div = document.createElement('div');
+            div.className = 'list-item';
+            div.innerHTML = `
+                <div class="list-info"><b>№${r.number}</b> - ${r.type} (${r.price}₽)</div>
+                <button class="delete" style="width:auto" onclick="deleteRoom(${r.id})">🗑</button>
+            `;
+            list.appendChild(div);
+        });
+
+        // Update modal select
+        const sel = document.getElementById('b-room');
+        sel.innerHTML = '';
+        roomsData.forEach(r => {
+            const opt = document.createElement('option');
+            opt.value = r.number;
+            opt.innerText = r.number;
+            sel.appendChild(opt);
+        });
+    }
+
+    async function addRoom() {
+        const number = document.getElementById('room-number').value;
+        const type = document.getElementById('room-type').value;
+        const price = document.getElementById('room-price').value;
+        if(!number || !price) return tg.showAlert("Заполните поля");
+
+        await fetch('/api/rooms', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({number, type, price})
+        });
+        document.getElementById('room-number').value = '';
+        await fetchRooms();
+        renderRooms();
+        renderGrid();
+    }
+
+    async function deleteRoom(id) {
+        if(!confirm("Удалить номер?")) return;
+        await fetch('/api/rooms', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id})
+        });
+        await fetchRooms();
+        renderRooms();
+        renderGrid();
+    }
+
+    // --- Menu Management ---
+    function renderMenu() {
+        const list = document.getElementById('menu-list');
+        list.innerHTML = '';
+        menuData.forEach(m => {
+            const div = document.createElement('div');
+            div.className = 'list-item';
+            div.innerHTML = `
+                <div class="list-info"><b>${m.name}</b> (${m.price}₽) <small>${m.category}</small></div>
+                <button class="delete" style="width:auto" onclick="deleteMenuItem(${m.id})">🗑</button>
+            `;
+            list.appendChild(div);
+        });
+    }
+
+    async function addMenuItem() {
+        const name = document.getElementById('menu-name').value;
+        const price = document.getElementById('menu-price').value;
+        const category = document.getElementById('menu-category').value;
+        if(!name || !price) return tg.showAlert("Заполните поля");
+
+        await fetch('/api/menu', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({name, price, category})
+        });
+        document.getElementById('menu-name').value = '';
+        await fetchMenu();
+        renderMenu();
+    }
+
+    async function deleteMenuItem(id) {
+        if(!confirm("Удалить блюдо?")) return;
+        await fetch('/api/menu', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id})
+        });
+        await fetchMenu();
+        renderMenu();
+    }
+
+    // --- Calendar Grid ---
+    function changeDate(days) {
+        startDate.setDate(startDate.getDate() + days);
+        renderGrid();
+        updateDateHeader();
+    }
+    function updateDateHeader() {
+        const end = new Date(startDate);
+        end.setDate(end.getDate() + daysToShow - 1);
+        document.getElementById('current-date-range').innerText =
+            `${startDate.getDate()}.${startDate.getMonth()+1} - ${end.getDate()}.${end.getMonth()+1}`;
     }
 
     function renderGrid() {
         const grid = document.getElementById('pms-grid');
         grid.innerHTML = '';
 
-        // Set columns: 1 for room number + daysToShow
+        // Layout
         grid.style.gridTemplateColumns = `60px repeat(${daysToShow}, 1fr)`;
 
-        // Header Row
-        const corner = document.createElement('div');
-        corner.className = 'cell header-cell room-cell';
-        corner.innerText = '№';
-        grid.appendChild(corner);
-
-        const dates = [];
+        // Dates Header
+        grid.appendChild(createCell('№', 'header-cell room-cell'));
         for(let i=0; i<daysToShow; i++) {
-            const d = addDays(startDay, i);
-            dates.push(formatDate(d));
-            const cell = document.createElement('div');
-            cell.className = 'cell header-cell';
-            cell.innerText = d.getDate() + '.' + (d.getMonth()+1);
+            const d = new Date(startDate);
+            d.setDate(d.getDate() + i);
+            const cell = createCell(`${d.getDate()}.${d.getMonth()+1}`, 'header-cell');
             grid.appendChild(cell);
         }
 
         // Rows
-        rooms.forEach(room => {
-            // Room Number Cell
-            const roomCell = document.createElement('div');
-            roomCell.className = 'cell room-cell';
-            roomCell.innerText = room;
-            grid.appendChild(roomCell);
+        roomsData.forEach(room => {
+            grid.appendChild(createCell(room.number, 'room-cell'));
 
-            // Date Cells
-            dates.forEach(dateStr => {
-                const cell = document.createElement('div');
-                cell.className = 'cell free-cell';
-                cell.dataset.room = room;
+            for(let i=0; i<daysToShow; i++) {
+                const d = new Date(startDate);
+                d.setDate(d.getDate() + i);
+                const dateStr = d.toISOString().split('T')[0];
+
+                const cell = createCell('', 'cell');
                 cell.dataset.date = dateStr;
+                cell.dataset.room = room.number;
 
-                // Check if booked
-                const booking = bookings.find(b =>
-                    b.room_number == room &&
-                    b.status !== 'cancelled' &&
-                    dateStr >= b.check_in &&
-                    dateStr < b.check_out
-                );
-
-                if (booking) {
-                    // Only render block on the start date or if start date is before view
-                    // For MVP grid simplicity, we just mark the cell.
-                    // A better way is spanning, but keeping it simple:
-                    cell.innerHTML = `<div class="booking-block" onclick="openDetails(${booking.id})">${booking.guest_name}</div>`;
-                    cell.classList.remove('free-cell'); // Remove click listener for create
-                } else {
-                    cell.onclick = () => openCreate(room, dateStr);
-                }
+                // Click to add
+                cell.onclick = () => openModal(null, room.number, dateStr);
 
                 grid.appendChild(cell);
-            });
+            }
+        });
+
+        // Render Bars
+        bookingsData.forEach(b => {
+            renderBookingBar(b);
         });
     }
 
-    // Modal Logic
-    let currentBookingId = null;
-
-    function openCreate(room, date) {
-        document.getElementById('new-room').value = room;
-        document.getElementById('new-checkin').value = date;
-
-        // Default checkout next day
-        const d = new Date(date);
-        d.setDate(d.getDate() + 1);
-        document.getElementById('new-checkout').value = formatDate(d);
-
-        document.getElementById('new-guest').value = '';
-        document.getElementById('create-modal').classList.add('active');
+    function createCell(text, className) {
+        const div = document.createElement('div');
+        div.className = 'cell ' + className;
+        div.innerText = text;
+        return div;
     }
 
-    function openDetails(id) {
-        event.stopPropagation();
-        const booking = bookings.find(b => b.id === id);
-        if(!booking) return;
-        currentBookingId = id;
-        document.getElementById('det-id').innerText = id;
-        document.getElementById('det-guest').innerText = booking.guest_name;
-        document.getElementById('det-dates').innerText = `${booking.check_in} - ${booking.check_out}`;
-        document.getElementById('details-modal').classList.add('active');
-    }
+    function renderBookingBar(b) {
+        // Find start index and span
+        const grid = document.getElementById('pms-grid');
+        const checkIn = new Date(b.check_in);
+        const checkOut = new Date(b.check_out);
 
-    function closeModal(id) {
-        document.getElementById(id).classList.remove('active');
-    }
+        // Calculate offset from view start
+        const diffTime = checkIn - startDate;
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
-    function submitBooking() {
-        const room = document.getElementById('new-room').value;
-        const guest = document.getElementById('new-guest').value;
-        const checkIn = document.getElementById('new-checkin').value;
-        const checkOut = document.getElementById('new-checkout').value;
+        const durationTime = checkOut - checkIn;
+        const durationDays = Math.ceil(durationTime / (1000 * 60 * 60 * 24));
 
-        if(!guest) return alert("Введите имя");
+        // Logic to position
+        // Col start = 2 (room col is 1) + diffDays
+        // But if diffDays < 0 (started before view), we truncate
 
-        const data = {
-            type: 'booking_create',
-            room_number: parseInt(room),
-            guest_name: guest,
-            check_in: checkIn,
-            check_out: checkOut
+        let startCol = 2 + diffDays;
+        let span = durationDays;
+        let leftOffset = 0;
+
+        if (startCol < 2) {
+             span += (startCol - 2);
+             startCol = 2;
+             // visual fix needed if we want to show it continues from left
+        }
+
+        if (startCol > (daysToShow + 1)) return; // Starts after view
+
+        if ((startCol + span) > (daysToShow + 2)) {
+            span = (daysToShow + 2) - startCol;
+        }
+
+        if (span <= 0) return;
+
+        // Find row index
+        const roomIndex = roomsData.findIndex(r => r.number == b.room_number);
+        if(roomIndex === -1) return;
+        const row = roomIndex + 2; // +1 for header
+
+        const bar = document.createElement('div');
+        bar.className = 'booking-bar';
+        bar.innerText = b.guest_name;
+        bar.style.gridColumnStart = startCol;
+        bar.style.gridColumnEnd = `span ${span}`;
+        bar.style.gridRowStart = row;
+
+        bar.onclick = (e) => {
+            e.stopPropagation();
+            openModal(b);
         };
-        tg.sendData(JSON.stringify(data));
-        closeModal('create-modal');
+
+        grid.appendChild(bar);
     }
 
-    function cancelBooking() {
-        if(!currentBookingId) return;
-        const data = {
-            type: 'booking_cancel',
-            booking_id: currentBookingId
-        };
-        tg.sendData(JSON.stringify(data));
-        closeModal('details-modal');
+    // --- Modal & Booking Actions ---
+    function openModal(booking, roomNum, dateStr) {
+        const modal = document.getElementById('booking-modal');
+        const btnCancel = document.getElementById('btn-cancel');
+
+        if (booking) {
+            document.getElementById('modal-title').innerText = "Бронь #" + booking.id;
+            document.getElementById('b-id').value = booking.id;
+            document.getElementById('b-room').value = booking.room_number;
+            document.getElementById('b-checkin').value = booking.check_in;
+            document.getElementById('b-checkout').value = booking.check_out;
+            document.getElementById('b-guest').value = booking.guest_name;
+            btnCancel.style.display = 'block';
+        } else {
+            document.getElementById('modal-title').innerText = "Новая бронь";
+            document.getElementById('b-id').value = '';
+            document.getElementById('b-room').value = roomNum;
+            document.getElementById('b-checkin').value = dateStr;
+
+            const next = new Date(dateStr);
+            next.setDate(next.getDate()+1);
+            document.getElementById('b-checkout').value = next.toISOString().split('T')[0];
+
+            document.getElementById('b-guest').value = '';
+            btnCancel.style.display = 'none';
+        }
+        modal.classList.add('active');
     }
 
-    // Initial load
-    fetchBookings();
+    function closeModal() {
+        document.getElementById('booking-modal').classList.remove('active');
+    }
+
+    async function saveBooking() {
+        const id = document.getElementById('b-id').value;
+        const room_number = document.getElementById('b-room').value;
+        const check_in = document.getElementById('b-checkin').value;
+        const check_out = document.getElementById('b-checkout').value;
+        const guest_name = document.getElementById('b-guest').value;
+
+        if(!guest_name) return tg.showAlert("Введите имя гостя");
+
+        // Since we don't have an edit API yet, we'll just use create.
+        // Ideally: if id exists -> update. For MVP -> delete then create (risky) or just create.
+        // The current backend only has `add_booking`. I'll implement a simple create via web_app_data or API.
+        // Since this is the ADMIN panel, it should probably use direct API calls instead of `tg.sendData` which closes the app.
+        // The user requested "handles" (API).
+
+        if (id) {
+             // Edit not implemented in DB yet, let's just re-create for now or skip
+             alert("Редактирование пока недоступно, только создание/удаление");
+             return;
+        }
+
+        const res = await fetch('/api/bookings', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({room_number, guest_name, check_in, check_out})
+        });
+
+        if(res.ok) {
+            closeModal();
+            fetchBookings().then(renderGrid);
+        } else {
+            alert("Ошибка сохранения");
+        }
+    }
+
+    async function deleteBooking() {
+        const id = document.getElementById('b-id').value;
+        if(!confirm("Удалить бронь?")) return;
+
+        await fetch('/api/bookings', {
+            method: 'DELETE',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({id})
+        });
+        closeModal();
+        fetchBookings().then(renderGrid);
+    }
+
+    // Start
+    init();
 
 </script>
 </body>

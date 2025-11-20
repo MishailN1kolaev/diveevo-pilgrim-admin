@@ -18,7 +18,7 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--bg-color);
             color: var(--text-color);
-            padding-bottom: 80px; /* For cart */
+            padding-bottom: 80px;
         }
         .header {
             padding: 15px;
@@ -157,20 +157,16 @@
 </div>
 
 <!-- Food Tab -->
-<div id="food" class="content active">
-    <!-- Items injected by JS -->
-</div>
+<div id="food" class="content active"></div>
 
 <!-- Drinks Tab -->
-<div id="drinks" class="content">
-</div>
+<div id="drinks" class="content"></div>
 
 <!-- Service Tab -->
-<div id="service" class="content">
-</div>
+<div id="service" class="content"></div>
 
 <!-- Feedback Tab -->
-<div id="feedback" class="content" style="display: none; display: block;"> <!-- Manual override for layout check, usually hidden -->
+<div id="feedback" class="content" style="display: none;">
     <div class="feedback-form">
         <div class="rating-stars" id="stars">
             <span class="star" data-val="1">★</span>
@@ -196,49 +192,58 @@
     const tg = window.Telegram.WebApp;
     tg.expand();
 
-    // Parse URL params for room (mocking logic for standalone)
     const urlParams = new URLSearchParams(window.location.search);
-    // In real app, room might come from start param or saved session,
-    // but here we assume the bot handles context or we pass it.
-    // Let's just keep it generic or "101" if missing.
     const room = urlParams.get('room') || '101';
     document.getElementById('room-header').innerText = `Комната ${room}`;
 
-    // Mock Data
-    const menu = {
-        food: [
-            {id: 'f1', name: 'Бургер', price: 550, icon: '🍔'},
-            {id: 'f2', name: 'Цезарь', price: 450, icon: '🥗'},
-            {id: 'f3', name: 'Паста', price: 600, icon: '🍝'},
-            {id: 'f4', name: 'Стейк', price: 1200, icon: '🥩'},
-        ],
-        drinks: [
-            {id: 'd1', name: 'Кола', price: 150, icon: '🥤'},
-            {id: 'd2', name: 'Вода', price: 100, icon: '💧'},
-            {id: 'd3', name: 'Кофе', price: 200, icon: '☕'},
-        ],
-        service: [
-            {id: 's1', name: 'Уборка', price: 0, icon: '🧹'},
-            {id: 's2', name: 'Полотенца', price: 0, icon: '🧖'},
-            {id: 's3', name: 'Продление', price: 1000, icon: '🕒'},
-        ]
-    };
-
+    let menuItems = [];
     const cart = {};
     let currentRating = 0;
+
+    async function fetchMenu() {
+        try {
+            const res = await fetch('/api/menu');
+            if(res.ok) {
+                menuItems = await res.json();
+                renderItems();
+            }
+        } catch(e) {
+            console.error(e);
+            // Fallback mock
+            menuItems = [
+                 {id:1, name:'Завтрак', price:500, category:'food', description:'Яичница и кофе'},
+                 {id:2, name:'Кола', price:100, category:'drinks', description:'0.5'}
+            ];
+            renderItems();
+        }
+    }
+
+    function getIcon(cat) {
+        if(cat=='food') return '🍔';
+        if(cat=='drinks') return '🥤';
+        if(cat=='service') return '🛎';
+        return '📦';
+    }
 
     function renderItems() {
         ['food', 'drinks', 'service'].forEach(cat => {
             const container = document.getElementById(cat);
             container.innerHTML = '';
-            menu[cat].forEach(item => {
+            const items = menuItems.filter(i => i.category === cat);
+
+            if(items.length === 0) {
+                container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: #999;">Пусто</div>';
+                return;
+            }
+
+            items.forEach(item => {
                 const div = document.createElement('div');
                 div.className = 'item-card';
                 div.innerHTML = `
-                    <div class="item-img">${item.icon}</div>
+                    <div class="item-img">${getIcon(item.category)}</div>
                     <div class="item-name">${item.name}</div>
                     <div class="item-price">${item.price > 0 ? item.price + ' ₽' : 'Бесплатно'}</div>
-                    <button class="add-btn" onclick="addToCart('${item.id}', '${cat}')">Добавить</button>
+                    <button class="add-btn" onclick="addToCart(${item.id})">Добавить</button>
                 `;
                 container.appendChild(div);
             });
@@ -250,7 +255,7 @@
         document.querySelectorAll('.content').forEach(c => {
             c.classList.remove('active');
             c.style.display = 'none';
-        }); // Ensure display none for non-grid items
+        });
 
         const selectedTab = document.querySelector(`.tab[onclick="switchTab('${tabName}')"]`);
         selectedTab.classList.add('active');
@@ -258,7 +263,6 @@
         const content = document.getElementById(tabName);
         content.classList.add('active');
 
-        // Reset display property based on class logic
         if(tabName === 'feedback') {
             content.style.display = 'block';
         } else {
@@ -266,8 +270,8 @@
         }
     }
 
-    function addToCart(id, category) {
-        const item = menu[category].find(i => i.id === id);
+    function addToCart(id) {
+        const item = menuItems.find(i => i.id === id);
         if (cart[id]) {
             cart[id].qty++;
         } else {
@@ -291,7 +295,6 @@
             document.getElementById('cart-total').innerText = total + ' ₽';
             document.getElementById('cart-count').innerText = count + ' товаров';
 
-            // Also set MainButton as alternative
             tg.MainButton.setText(`Заказать на ${total} ₽`);
             tg.MainButton.show();
             tg.MainButton.onClick(sendOrder);
@@ -306,13 +309,14 @@
 
         const data = {
             type: 'order',
+            room: room,
             items: cart,
             total_price: Object.values(cart).reduce((sum, i) => sum + (i.price * i.qty), 0)
         };
         tg.sendData(JSON.stringify(data));
     }
 
-    // Feedback Logic
+    // Feedback
     document.querySelectorAll('.star').forEach(star => {
         star.addEventListener('click', function() {
             currentRating = parseInt(this.dataset.val);
@@ -336,9 +340,7 @@
         tg.sendData(JSON.stringify(data));
     }
 
-    // Init
-    renderItems();
-    // Fix initial tab display
+    fetchMenu();
     switchTab('food');
 
 </script>
