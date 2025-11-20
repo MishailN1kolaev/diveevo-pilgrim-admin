@@ -206,6 +206,24 @@ async def get_bookings():
             rows = await cursor.fetchall()
             return [dict(row) for row in rows]
 
+async def get_booking(booking_id):
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM bookings WHERE id = ?", (booking_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
+            return None
+
+async def update_booking(booking_id, room_number, guest_name, check_in, check_out, cost_per_night, phone):
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute("""
+            UPDATE bookings
+            SET room_number = ?, guest_name = ?, check_in = ?, check_out = ?, cost_per_night = ?, phone = ?
+            WHERE id = ?
+        """, (room_number, guest_name, check_in, check_out, cost_per_night, phone, booking_id))
+        await db.commit()
+
 async def delete_booking(booking_id):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("DELETE FROM bookings WHERE id = ?", (booking_id,))

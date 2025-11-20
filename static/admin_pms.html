@@ -37,9 +37,9 @@
         /* Chessboard Grid */
         .controls { display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center; }
         .grid-container { display: grid; overflow-x: auto; border: 1px solid var(--border-color); position: relative; }
-        .cell { height: 50px; border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 14px; min-width: 50px; color: var(--text-color); position: relative; }
+        .cell { height: 60px; border-right: 1px solid var(--border-color); border-bottom: 1px solid var(--border-color); display: flex; align-items: center; justify-content: center; font-size: 14px; min-width: 100px; color: var(--text-color); position: relative; }
         .header-cell { background: var(--secondary-bg-color); color: var(--text-color); font-weight: bold; position: sticky; top: 0; z-index: 5; }
-        .room-cell { background: var(--secondary-bg-color); color: var(--text-color); font-weight: bold; position: sticky; left: 0; z-index: 6; min-width: 70px; justify-content: flex-start; padding-left: 5px; }
+        .room-cell { background: var(--secondary-bg-color); color: var(--text-color); font-weight: bold; position: sticky; left: 0; z-index: 6; min-width: 80px; justify-content: flex-start; padding-left: 10px; }
 
         /* Booking Styles */
         .booking-cell {
@@ -55,9 +55,11 @@
             overflow: hidden;
             white-space: nowrap;
             text-overflow: ellipsis;
-            position: absolute; /* Changed to absolute to overlay */
+            position: absolute;
             top: 0;
             left: 0;
+            box-sizing: border-box;
+            padding: 2px;
         }
 
         /* Split Cell Styles */
@@ -76,15 +78,6 @@
             z-index: 2;
             background: #f0ad4e; /* Orangeish for checkout */
         }
-        /* Add checkout time indicator */
-        .booking-cell.departing::after {
-            content: 'Выезд до 12:00';
-            position: absolute;
-            bottom: 2px;
-            right: 5px;
-            font-size: 9px;
-            opacity: 0.8;
-        }
 
         /* Arriving: Bottom-Right Half */
         .booking-cell.arriving {
@@ -95,15 +88,9 @@
             z-index: 2;
             background: var(--button-color);
         }
-        /* Add checkin time indicator */
-        .booking-cell.arriving::after {
-            content: 'Заезд с 13:00';
-            position: absolute;
-            top: 2px;
-            right: 5px;
-            font-size: 9px;
-            opacity: 0.8;
-        }
+
+        /* Text indicators for checkin/out - moved to a cleaner layout or title */
+        /* Removing the 'crooked' ::after content and making it cleaner */
 
         .booking-cell.cleaning-needed { background: #ffd700; color: #000; } /* Gold/Yellow */
         .booking-cell.cleaned { background: #4caf50; color: #fff; } /* Green */
@@ -346,7 +333,8 @@
 
     function jumpToDate(val) {
         if (!val) return;
-        startDate = new Date(val);
+        // Force set time to noon to avoid timezone date shift issues
+        startDate = new Date(val + "T12:00:00");
         renderGrid();
         updateDateHeader();
     }
@@ -364,8 +352,8 @@
         const scrollLeft = grid.scrollLeft;
         grid.innerHTML = '';
 
-        // Layout
-        grid.style.gridTemplateColumns = `70px repeat(${daysToShow}, 1fr)`;
+        // Layout: Increased width for better visibility
+        grid.style.gridTemplateColumns = `80px repeat(${daysToShow}, 1fr)`;
 
         // Dates Header
         grid.appendChild(createCell('№', 'header-cell room-cell'));
@@ -376,23 +364,31 @@
             grid.appendChild(cell);
         }
 
-        // Booking Map: room_date -> [bookings]
-        // Support multiple bookings per day
+        // Booking Map
         const bookingMap = {};
 
         bookingsData.forEach(b => {
-            const start = new Date(b.check_in);
-            const end = new Date(b.check_out);
+            const start = new Date(b.check_in + "T00:00:00"); // Parse as local ISO-like
+            const end = new Date(b.check_out + "T00:00:00");
             let curr = new Date(start);
 
-            while(curr <= end) {
-                const dStr = curr.toISOString().split('T')[0];
+            // Safety brake for infinite loops if dates are messed up
+            let safety = 0;
+            while(curr <= end && safety < 365) {
+                safety++;
+                // Use local date string construction to match grid logic
+                const yyyy = curr.getFullYear();
+                const mm = String(curr.getMonth() + 1).padStart(2, '0');
+                const dd = String(curr.getDate()).padStart(2, '0');
+                const dStr = `${yyyy}-${mm}-${dd}`;
+
                 const key = `${b.room_number}_${dStr}`;
 
                 if(!bookingMap[key]) bookingMap[key] = [];
 
-                const isStart = (curr.getTime() === start.getTime());
-                const isEnd = (curr.getTime() === end.getTime());
+                // Comparison based on string to avoid time issues
+                const isStart = (dStr === b.check_in);
+                const isEnd = (dStr === b.check_out);
 
                 bookingMap[key].push({
                     booking: b,
@@ -410,55 +406,33 @@
             for(let i=0; i<daysToShow; i++) {
                 const d = new Date(startDate);
                 d.setDate(d.getDate() + i);
-                const dateStr = d.toISOString().split('T')[0];
+
+                // Construct dateStr using LOCAL components
+                const yyyy = d.getFullYear();
+                const mm = String(d.getMonth() + 1).padStart(2, '0');
+                const dd = String(d.getDate()).padStart(2, '0');
+                const dateStr = `${yyyy}-${mm}-${dd}`;
+
                 const cell = createCell('', 'cell');
 
                 const key = `${room.number}_${dateStr}`;
                 const bookings = bookingMap[key] || [];
-
-                // Render Logic for Split vs Full
-                // Case 1: Single booking, full day (middle)
-                // Case 2: Single booking, Start (PM checkin)
-                // Case 3: Single booking, End (AM checkout)
-                // Case 4: Overlap (End of A, Start of B)
-
-                // To simplify, we just render divs.
-                // If "Full Day", we use width 100%, height 100%.
-                // If "End", we use Top Half? Or standard cleaning view.
-                // If "Start", we use Bottom Half?
-
-                // Actually, let's use simple heuristics:
-                // If we have >1 booking, assume it's a transition day.
-                // Find the one ending today and the one starting today.
 
                 const ending = bookings.find(x => x.isEnd);
                 const starting = bookings.find(x => x.isStart);
                 const ongoing = bookings.find(x => !x.isStart && !x.isEnd);
 
                 if (ongoing) {
-                    // Full day occupation
                     cell.appendChild(createBookingDiv(ongoing.booking, 'full'));
                 } else if (ending && starting) {
-                    // Transition
                     cell.classList.add('split-cell');
-                    cell.appendChild(createBookingDiv(ending.booking, 'departing', true));
+                    cell.appendChild(createBookingDiv(ending.booking, 'departing'));
                     cell.appendChild(createBookingDiv(starting.booking, 'arriving'));
                 } else if (ending) {
-                    // Only ending (checkout day)
-                    // Normally this is a cleaning day.
-                    // We can show it as departing/cleaning.
-                    // Visually, let's make it full cell but mark as 'departing' style or just standard 'cleaning-needed'
-                    // If we use 'departing' style (half height), it implies availability in PM.
-                    // Let's use half-height to indicate PM is free?
-                    // Or stick to old logic if no new guest.
-                    // Requirement: "show checkout was 12 and checkin is 13".
-                    // So let's use half-height for ending bookings on the last day.
-                    cell.appendChild(createBookingDiv(ending.booking, 'departing', true));
+                    cell.appendChild(createBookingDiv(ending.booking, 'departing'));
                 } else if (starting) {
-                    // Only starting (checkin day)
                     cell.appendChild(createBookingDiv(starting.booking, 'arriving'));
                 } else {
-                    // Empty
                     cell.onclick = () => openModal(null, room.number, dateStr);
                 }
 
@@ -469,18 +443,21 @@
         grid.scrollLeft = scrollLeft;
     }
 
-    function createBookingDiv(booking, type, isCleaningLogic=false) {
+    function createBookingDiv(booking, type) {
         const div = document.createElement('div');
         div.className = 'booking-cell';
         div.innerText = booking.guest_name;
+        div.title = `Гость: ${booking.guest_name}\nТел: ${booking.phone||'-'}\nЗаезд: ${booking.check_in}\nВыезд: ${booking.check_out}`;
 
         if (type === 'departing') {
             div.classList.add('departing');
-            // Cleaning Logic
-             div.classList.add('cleaning-needed');
+            div.classList.add('cleaning-needed');
+            // Use title for info instead of crooked text
+            div.title += "\nВыезд до 12:00. Кликните, чтобы сменить статус уборки.";
              if (booking.is_cleaned) {
                  div.classList.remove('cleaning-needed');
                  div.classList.add('cleaned');
+                 div.title += " (Убрано)";
              }
              div.onclick = async (e) => {
                  e.stopPropagation();
@@ -494,9 +471,9 @@
              };
         } else if (type === 'arriving') {
             div.classList.add('arriving');
+            div.title += "\nЗаезд с 13:00";
             div.onclick = (e) => { e.stopPropagation(); openModal(booking); };
         } else {
-            // Full
             div.onclick = (e) => { e.stopPropagation(); openModal(booking); };
         }
 
@@ -571,7 +548,10 @@
 
             const next = new Date(dateStr);
             next.setDate(next.getDate()+1);
-            document.getElementById('b-checkout').value = next.toISOString().split('T')[0];
+            const yyyy = next.getFullYear();
+            const mm = String(next.getMonth() + 1).padStart(2, '0');
+            const dd = String(next.getDate()).padStart(2, '0');
+            document.getElementById('b-checkout').value = `${yyyy}-${mm}-${dd}`;
 
             document.getElementById('b-guest').value = '';
             document.getElementById('b-phone').value = '';
@@ -600,22 +580,27 @@
 
         if(!guest_name) return tg.showAlert("Введите имя гостя");
 
+        // Prepare Payload
+        const payload = {
+            room_number,
+            guest_name,
+            check_in,
+            check_out,
+            cost_per_night,
+            phone
+        };
+
+        let method = 'POST';
+        let url = '/api/bookings';
         if (id) {
-             alert("Редактирование: удалите старую и создайте новую (для сохранения статистики нужно API обновления)");
-             return;
+            method = 'PUT';
+            payload.id = id;
         }
 
-        const res = await fetch('/api/bookings', {
-            method: 'POST',
+        const res = await fetch(url, {
+            method: method,
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                room_number,
-                guest_name,
-                check_in,
-                check_out,
-                cost_per_night,
-                phone
-            })
+            body: JSON.stringify(payload)
         });
 
         if(res.ok) {
