@@ -76,6 +76,15 @@
             z-index: 2;
             background: #f0ad4e; /* Orangeish for checkout */
         }
+        /* Add checkout time indicator */
+        .booking-cell.departing::after {
+            content: 'Выезд до 12:00';
+            position: absolute;
+            bottom: 2px;
+            right: 5px;
+            font-size: 9px;
+            opacity: 0.8;
+        }
 
         /* Arriving: Bottom-Right Half */
         .booking-cell.arriving {
@@ -85,6 +94,15 @@
             left: 0;
             z-index: 2;
             background: var(--button-color);
+        }
+        /* Add checkin time indicator */
+        .booking-cell.arriving::after {
+            content: 'Заезд с 13:00';
+            position: absolute;
+            top: 2px;
+            right: 5px;
+            font-size: 9px;
+            opacity: 0.8;
         }
 
         .booking-cell.cleaning-needed { background: #ffd700; color: #000; } /* Gold/Yellow */

@@ -51,7 +51,7 @@ async def init_db():
                 ('user_id', 'INTEGER')
             ],
             'users': [
-                ('phone', 'TEXT UNIQUE')
+                ('phone', 'TEXT')
             ]
         }
 
@@ -60,8 +60,7 @@ async def init_db():
                 try:
                     await db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
                 except Exception as e:
-                    # logging.debug(f"Column {col_name} in {table} likely exists: {e}")
-                    pass
+                    logging.warning(f"Migration warning: Column {col_name} in {table} could not be added (might exist): {e}")
 
         # New Tables
         await db.execute("""
