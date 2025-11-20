@@ -32,8 +32,7 @@ async def init_db():
                 check_out TEXT,
                 status TEXT DEFAULT 'booked',
                 cost_per_night REAL DEFAULT 0,
-                extras_total REAL DEFAULT 0,
-                paid_amount REAL DEFAULT 0
+                extras_total REAL DEFAULT 0
             )
         """)
 
@@ -44,10 +43,6 @@ async def init_db():
             pass
         try:
             await db.execute("ALTER TABLE bookings ADD COLUMN extras_total REAL DEFAULT 0")
-        except Exception:
-            pass
-        try:
-            await db.execute("ALTER TABLE bookings ADD COLUMN paid_amount REAL DEFAULT 0")
         except Exception:
             pass
 
@@ -112,23 +107,14 @@ async def save_order(user_id, items, total_price):
         return cursor.lastrowid
 
 # --- Bookings ---
-async def add_booking(room_number, guest_name, check_in, check_out, cost_per_night, paid_amount=0):
+async def add_booking(room_number, guest_name, check_in, check_out, cost_per_night):
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("""
-            INSERT INTO bookings (room_number, guest_name, check_in, check_out, cost_per_night, paid_amount)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (room_number, guest_name, check_in, check_out, cost_per_night, paid_amount))
+            INSERT INTO bookings (room_number, guest_name, check_in, check_out, cost_per_night)
+            VALUES (?, ?, ?, ?, ?)
+        """, (room_number, guest_name, check_in, check_out, cost_per_night))
         await db.commit()
         return cursor.lastrowid
-
-async def update_booking(booking_id, room_number, guest_name, check_in, check_out, cost_per_night, paid_amount):
-    async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute("""
-            UPDATE bookings
-            SET room_number = ?, guest_name = ?, check_in = ?, check_out = ?, cost_per_night = ?, paid_amount = ?
-            WHERE id = ?
-        """, (room_number, guest_name, check_in, check_out, cost_per_night, paid_amount, booking_id))
-        await db.commit()
 
 async def update_booking_extras(room_number, amount):
     today = datetime.now().strftime("%Y-%m-%d")
