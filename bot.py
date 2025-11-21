@@ -364,7 +364,13 @@ async def handle_web_app_data(message: Message, bot: Bot):
             except ValueError:
                 pass
 
-        order_id = await db.save_order(message.from_user.id, data['items'], data['total_price'], booking_id)
+        # Fetch phone for order binding
+        user_phone = None
+        user = await db.get_user(message.from_user.id)
+        if user:
+            user_phone = user.get('phone')
+
+        order_id = await db.save_order(message.from_user.id, data['items'], data['total_price'], booking_id, phone=user_phone)
 
         # Update active booking extras
         if room_num:

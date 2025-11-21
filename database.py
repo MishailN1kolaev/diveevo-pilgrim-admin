@@ -57,7 +57,8 @@ async def init_db():
                 ('phone', 'TEXT')
             ],
             'orders': [
-                ('booking_id', 'INTEGER')
+                ('booking_id', 'INTEGER'),
+                ('phone', 'TEXT')
             ]
         }
 
@@ -151,14 +152,14 @@ async def get_user_by_phone(phone):
             return None
 
 # --- Orders ---
-async def save_order(user_id, items, total_price, booking_id=None):
+async def save_order(user_id, items, total_price, booking_id=None, phone=None):
     created_at = datetime.now().isoformat()
     items_json = json.dumps(items)
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("""
-            INSERT INTO orders (user_id, items, total_price, created_at, booking_id)
-            VALUES (?, ?, ?, ?, ?)
-        """, (user_id, items_json, total_price, created_at, booking_id))
+            INSERT INTO orders (user_id, items, total_price, created_at, booking_id, phone)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, items_json, total_price, created_at, booking_id, phone))
         await db.commit()
         return cursor.lastrowid
 
@@ -183,8 +184,34 @@ async def add_booking(room_number, guest_name, check_in, check_out, cost_per_nig
             INSERT INTO bookings (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id, paid_amount)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id, paid_amount))
+        new_booking_id = cursor.lastrowid
         await db.commit()
-        return cursor.lastrowid
+
+        # Link orphan orders by phone if available
+        if phone:
+            # Find orders with this phone that are NOT linked to a valid booking (orphaned)
+            # We assume orphaned means booking_id is NULL or invalid.
+            # But checking validity is hard in one query.
+            # Let's trust 'new' status and no active booking link.
+            # Actually, if we just check booking_id IS NULL or booking_id NOT IN (SELECT id FROM bookings)
+            orphaned_orders_query = """
+                SELECT id, total_price FROM orders
+                WHERE phone = ? AND status = 'new' AND (booking_id IS NULL OR booking_id NOT IN (SELECT id FROM bookings))
+            """
+            async with db.execute(orphaned_orders_query, (phone,)) as order_cursor:
+                orphaned_orders = await order_cursor.fetchall()
+
+            if orphaned_orders:
+                extras_to_add = 0
+                for order_id, price in orphaned_orders:
+                    extras_to_add += price
+                    await db.execute("UPDATE orders SET booking_id = ? WHERE id = ?", (new_booking_id, order_id))
+
+                if extras_to_add > 0:
+                     await db.execute("UPDATE bookings SET extras_total = extras_total + ? WHERE id = ?", (extras_to_add, new_booking_id))
+                await db.commit()
+
+        return new_booking_id
 
 async def link_bookings_to_user(phone, user_id):
     async with aiosqlite.connect(DB_NAME) as db:
