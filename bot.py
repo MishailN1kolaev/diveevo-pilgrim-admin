@@ -4,6 +4,7 @@ import sys
 import json
 from os import getenv
 import re
+from datetime import datetime
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.client.default import DefaultBotProperties
@@ -45,31 +46,40 @@ async def handle_get_bookings(request):
     return web.json_response([dict(b) for b in bookings])
 
 async def handle_add_booking(request):
-    data = await request.json()
-    cost_per_night = data.get('cost_per_night', 0)
-    # Pass phone if present
-    phone = data.get('phone')
-    await db.add_booking(
-        data['room_number'],
-        data['guest_name'],
-        data['check_in'],
-        data['check_out'],
-        cost_per_night,
-        phone=phone
-    )
+    try:
+        data = await request.json()
+        cost_per_night = data.get('cost_per_night', 0)
+        paid_amount = data.get('paid_amount', 0)
+        # Pass phone if present
+        phone = data.get('phone')
+        await db.add_booking(
+            data['room_number'],
+            data['guest_name'],
+            data['check_in'],
+            data['check_out'],
+            cost_per_night,
+            phone=phone,
+            paid_amount=paid_amount
+        )
 
-    # Check if we should create/update a user for this phone
-    if phone:
-        existing_user = await db.get_user_by_phone(phone)
-        if not existing_user:
-            # We can't create a full user without Telegram ID, but we have the booking.
-            # The user will be linked when they join via bot.
-            pass
-        else:
-            # If user exists, ensure their ID is on the booking (add_booking already tries to do this)
-            pass
+        # Check if we should create/update a user for this phone
+        if phone:
+            existing_user = await db.get_user_by_phone(phone)
+            if existing_user:
+                # Issue 1: Sync user's room
+                await db.add_user(existing_user['user_id'], existing_user['username'], int(data['room_number']))
+                # Also ensure their ID is on the booking (add_booking already tries to do this)
+            else:
+                # User doesn't exist yet, will be linked when they join via bot
+                pass
 
-    return web.json_response({"status": "ok"})
+        return web.json_response({"status": "ok"})
+    except Exception as e:
+        with open('error.log', 'a') as f:
+            import traceback
+            f.write(f"Error: {e}\n")
+            traceback.print_exc(file=f)
+        return web.json_response({"status": "error", "message": str(e)}, status=500)
 
 async def handle_update_booking(request):
     data = await request.json()
@@ -84,6 +94,7 @@ async def handle_update_booking(request):
 
     new_room_number = data['room_number']
     phone = data.get('phone')
+    paid_amount = data.get('paid_amount', 0)
 
     # Update DB
     await db.update_booking(
@@ -93,7 +104,8 @@ async def handle_update_booking(request):
         data['check_in'],
         data['check_out'],
         data.get('cost_per_night', 0),
-        phone
+        phone,
+        paid_amount
     )
 
     # Task 1 & 4: Notify user if room changed
@@ -134,6 +146,38 @@ async def handle_toggle_cleaning(request):
         new_status = await db.toggle_booking_cleaning_status(booking_id)
         return web.json_response({"status": "ok", "is_cleaned": new_status})
     return web.json_response({"status": "error"}, status=400)
+
+async def handle_add_service_to_booking(request):
+    data = await request.json()
+    booking_id = data.get('booking_id')
+    items = data.get('items') # Expected dict or list
+    total_price = data.get('total_price')
+
+    if not booking_id or not items:
+        return web.json_response({"status": "error", "message": "Missing data"}, status=400)
+
+    # Get booking to find user_id (if any)
+    booking = await db.get_booking(booking_id)
+    if not booking:
+         return web.json_response({"status": "error", "message": "Booking not found"}, status=404)
+
+    user_id = booking['user_id'] # May be None
+
+    # Save Order linked to Booking
+    await db.save_order(user_id, items, total_price, booking_id)
+
+    # Update Booking Extras
+    await db.update_booking_extras(booking['room_number'], total_price, booking_id)
+
+    return web.json_response({"status": "ok"})
+
+async def handle_get_booking_orders(request):
+    booking_id = request.match_info.get('id')
+    if not booking_id:
+        return web.json_response({"status": "error"}, status=400)
+
+    orders = await db.get_orders_by_booking(booking_id)
+    return web.json_response([dict(o) for o in orders])
 
 # Rooms
 async def handle_get_rooms(request):
@@ -183,16 +227,27 @@ async def command_start_handler(message: Message, state: FSMContext) -> None:
     # Parse room from deep link if present
     args = message.text.split(' ')
     room = "101"
+    has_deep_link = False
     if len(args) > 1:
         payload = args[1]
         if payload.startswith("room_"):
             room = payload.replace("room_", "")
+            has_deep_link = True
 
     # Save payload room to state for later usage
     await state.update_data(room=room)
 
     if user and user.get('phone'):
         # User is fully registered
+
+        # Issue 1: If no deep link, try to sync room with active booking
+        if not has_deep_link:
+            active_booking = await db.get_active_booking_by_user(user['user_id'])
+            if active_booking:
+                room = str(active_booking['room_number'])
+                # Update user context
+                await db.add_user(user['user_id'], user['username'], int(room))
+
         await show_main_menu(message, room)
     else:
         # User needs to register phone
@@ -238,6 +293,12 @@ async def handle_phone_input(message: Message, state: FSMContext):
         # Link any existing bookings that have this phone but no user_id
         await db.link_bookings_to_user(phone, message.from_user.id)
 
+        # Check for active booking to set correct room immediately
+        active_booking = await db.get_active_booking_by_user(message.from_user.id)
+        if active_booking:
+             room = str(active_booking['room_number'])
+             await db.add_user(message.from_user.id, message.from_user.full_name, int(room))
+
         await message.answer("Регистрация успешна!")
         await state.clear()
         await show_main_menu(message, room)
@@ -275,17 +336,39 @@ async def handle_web_app_data(message: Message, bot: Bot):
     data = json.loads(message.web_app_data.data)
 
     if data['type'] == 'order':
-        # Save to DB
-        order_id = await db.save_order(message.from_user.id, data['items'], data['total_price'])
+        # Issue 3: Check Time for Breakfast
+        has_breakfast = False
+        for k, v in data['items'].items():
+            if "завтрак" in v['name'].lower():
+                has_breakfast = True
+                break
 
-        # Update active booking extras
-        room = data.get('room')
-        if room:
+        if has_breakfast:
+            now = datetime.now()
+            # 12:00 to 19:00
+            if not (12 <= now.hour < 19):
+                await message.answer("⛔ Заказ завтрака доступен только с 12:00 до 19:00.")
+                return
+
+        # Save to DB
+        # We need booking_id for Issue 2 (link orders to booking)
+        # Try to find active booking
+        room_num = None
+        booking_id = None
+        if 'room' in data:
             try:
-                room_num = int(room)
-                await db.update_booking_extras(room_num, data['total_price'])
+                room_num = int(data['room'])
+                active_booking = await db.get_active_booking_by_room(room_num)
+                if active_booking:
+                    booking_id = active_booking['id']
             except ValueError:
                 pass
+
+        order_id = await db.save_order(message.from_user.id, data['items'], data['total_price'], booking_id)
+
+        # Update active booking extras
+        if room_num:
+            await db.update_booking_extras(room_num, data['total_price'], booking_id)
 
         # Reply to User
         await message.answer(f"✅ Заказ #{order_id} принят! Оплата на кассе.\nСумма: {data['total_price']} ₽")
@@ -376,6 +459,8 @@ async def main():
     app.router.add_put('/api/bookings', handle_update_booking)
     app.router.add_delete('/api/bookings', handle_delete_booking)
     app.router.add_post('/api/bookings/toggle_cleaning', handle_toggle_cleaning)
+    app.router.add_post('/api/bookings/services', handle_add_service_to_booking)
+    app.router.add_get('/api/bookings/{id}/orders', handle_get_booking_orders)
 
     app.router.add_get('/api/rooms', handle_get_rooms)
     app.router.add_post('/api/rooms', handle_add_room)

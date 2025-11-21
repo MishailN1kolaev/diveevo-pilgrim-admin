@@ -29,6 +29,7 @@
         input, select, textarea { width: 100%; padding: 12px; margin-bottom: 10px; border: 1px solid var(--border-color); border-radius: 4px; box-sizing: border-box; background: #fff; color: var(--text-color); font-size: 16px; }
         button { width: 100%; padding: 12px; background: var(--button-color); color: var(--button-text-color); border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
         button.delete { background: #ff5252; }
+        button.secondary { background: #6c757d; }
 
         /* Lists */
         .list-item { background: var(--bg-color); border: 1px solid var(--border-color); padding: 10px; margin-bottom: 10px; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; }
@@ -163,11 +164,30 @@
         <input type="tel" id="b-phone" placeholder="+79001234567">
         <label>Стоимость за сутки (₽)</label>
         <input type="number" id="b-cost-per-night" onchange="recalcTotal()">
+        <label>Оплачено (₽)</label>
+        <input type="number" id="b-paid-amount" value="0" onchange="recalcTotal()">
 
         <div style="background: #eee; padding: 10px; border-radius: 5px; margin-bottom: 10px;">
             <div>Проживание: <b id="calc-room-total">0</b> ₽</div>
             <div>Доп. услуги: <b id="calc-extras-total">0</b> ₽</div>
-            <div style="font-size: 1.2em; margin-top: 5px;">Итого: <b id="calc-total">0</b> ₽</div>
+            <div style="border-top: 1px solid #ccc; margin-top: 5px; padding-top: 5px;">Итого: <b id="calc-total">0</b> ₽</div>
+            <div>Оплачено: <b id="calc-paid">0</b> ₽</div>
+            <div style="color: red">Остаток: <b id="calc-remaining">0</b> ₽</div>
+        </div>
+
+        <!-- Services Section -->
+        <div id="services-section" style="display:none; margin-bottom: 10px; border: 1px solid #eee; padding: 10px; border-radius: 4px;">
+            <h4>Услуги / Заказы</h4>
+            <div id="order-list" style="margin-bottom: 10px; max-height: 100px; overflow-y: auto; font-size: 0.9em;"></div>
+
+            <label>Добавить услугу</label>
+            <div style="display:flex; gap: 5px;">
+                <select id="service-select" style="flex-grow: 1; margin-bottom: 0;">
+                    <option value="">Выберите...</option>
+                </select>
+                <input type="number" id="service-qty" value="1" min="1" style="width: 50px; margin-bottom: 0;">
+            </div>
+            <button class="secondary" onclick="addServiceToBooking()" style="margin-top: 5px;">Добавить</button>
         </div>
 
         <div style="display:flex; gap:10px; margin-top:10px;">
@@ -504,6 +524,7 @@
         const checkIn = new Date(document.getElementById('b-checkin').value);
         const checkOut = new Date(document.getElementById('b-checkout').value);
         const costPerNight = parseFloat(document.getElementById('b-cost-per-night').value) || 0;
+        const paidAmount = parseFloat(document.getElementById('b-paid-amount').value) || 0;
 
         let nights = 0;
         if (checkIn && checkOut && checkOut > checkIn) {
@@ -520,14 +541,20 @@
             if (booking) extras = booking.extras_total || 0;
         }
 
+        const total = roomTotal + extras;
+        const remaining = total - paidAmount;
+
         document.getElementById('calc-room-total').innerText = roomTotal;
         document.getElementById('calc-extras-total').innerText = extras;
-        document.getElementById('calc-total').innerText = roomTotal + extras;
+        document.getElementById('calc-total').innerText = total;
+        document.getElementById('calc-paid').innerText = paidAmount;
+        document.getElementById('calc-remaining').innerText = remaining;
     }
 
-    function openModal(booking, roomNum, dateStr) {
+    async function openModal(booking, roomNum, dateStr) {
         const modal = document.getElementById('booking-modal');
         const btnCancel = document.getElementById('btn-cancel');
+        const servicesSection = document.getElementById('services-section');
 
         if (booking) {
             document.getElementById('modal-title').innerText = "Бронь #" + booking.id;
@@ -538,8 +565,14 @@
             document.getElementById('b-guest').value = booking.guest_name;
             document.getElementById('b-phone').value = booking.phone || '';
             document.getElementById('b-cost-per-night').value = booking.cost_per_night || 0;
+            document.getElementById('b-paid-amount').value = booking.paid_amount || 0;
 
             btnCancel.style.display = 'block';
+            servicesSection.style.display = 'block';
+
+            await fetchAndRenderServices(booking.id);
+            populateServiceDropdown();
+
         } else {
             document.getElementById('modal-title').innerText = "Новая бронь";
             document.getElementById('b-id').value = '';
@@ -555,14 +588,111 @@
 
             document.getElementById('b-guest').value = '';
             document.getElementById('b-phone').value = '';
+            document.getElementById('b-paid-amount').value = 0;
 
             const room = roomsData.find(r => r.number == roomNum);
             document.getElementById('b-cost-per-night').value = room ? room.price : 0;
 
             btnCancel.style.display = 'none';
+            servicesSection.style.display = 'none';
         }
         recalcTotal();
         modal.classList.add('active');
+    }
+
+    function populateServiceDropdown() {
+        const sel = document.getElementById('service-select');
+        sel.innerHTML = '<option value="">Выберите...</option>';
+        menuData.forEach(m => {
+            const opt = document.createElement('option');
+            opt.value = m.id;
+            opt.innerText = `${m.name} (${m.price}₽)`;
+            opt.dataset.price = m.price;
+            opt.dataset.name = m.name;
+            sel.appendChild(opt);
+        });
+    }
+
+    async function fetchAndRenderServices(bookingId) {
+        const list = document.getElementById('order-list');
+        list.innerHTML = 'Загрузка...';
+
+        const res = await fetch(`/api/bookings/${bookingId}/orders`);
+        if(res.ok) {
+            const orders = await res.json();
+            if(orders.length === 0) {
+                list.innerHTML = 'Нет услуг';
+                return;
+            }
+            list.innerHTML = '';
+            orders.forEach(o => {
+                const items = JSON.parse(o.items);
+                let itemsStr = "";
+                // items structure can be dict (from webapp) or we just conform to it.
+                // WebApp sends: { "id": {name, qty, price}, ... }
+                // Let's standardize on dict for admin too.
+
+                Object.values(items).forEach(item => {
+                     itemsStr += `${item.name} x${item.qty}, `;
+                });
+
+                const div = document.createElement('div');
+                div.innerText = `${itemsStr} = ${o.total_price}₽ (${o.created_at.split('T')[0]})`;
+                list.appendChild(div);
+            });
+        } else {
+            list.innerHTML = 'Ошибка загрузки';
+        }
+    }
+
+    async function addServiceToBooking() {
+        const bookingId = document.getElementById('b-id').value;
+        const sel = document.getElementById('service-select');
+        const qtyInput = document.getElementById('service-qty');
+
+        const selectedOpt = sel.options[sel.selectedIndex];
+        if(!selectedOpt || !selectedOpt.value) return alert("Выберите услугу");
+
+        const name = selectedOpt.dataset.name;
+        const price = parseFloat(selectedOpt.dataset.price);
+        const qty = parseInt(qtyInput.value);
+
+        if(qty < 1) return;
+
+        const items = {
+            [selectedOpt.value]: {
+                name: name,
+                price: price,
+                qty: qty
+            }
+        };
+
+        const totalPrice = price * qty;
+
+        const res = await fetch('/api/bookings/services', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                booking_id: bookingId,
+                items: items,
+                total_price: totalPrice
+            })
+        });
+
+        if(res.ok) {
+            await fetchBookings();
+            await fetchAndRenderServices(bookingId);
+            recalcTotal(); // bookingData is stale, wait, fetchBookings is async.
+            // We need to update local booking data to reflect new extra total
+            // fetchBookings already called.
+
+            // Need to refresh extras in modal
+            const booking = bookingsData.find(b => b.id == bookingId);
+            // Note: fetchBookings() updates bookingsData global
+            recalcTotal();
+        } else {
+            alert("Ошибка добавления");
+        }
     }
 
     function closeModal() {
@@ -577,6 +707,7 @@
         const guest_name = document.getElementById('b-guest').value;
         const phone = document.getElementById('b-phone').value;
         const cost_per_night = parseFloat(document.getElementById('b-cost-per-night').value) || 0;
+        const paid_amount = parseFloat(document.getElementById('b-paid-amount').value) || 0;
 
         if(!guest_name) return tg.showAlert("Введите имя гостя");
 
@@ -587,7 +718,8 @@
             check_in,
             check_out,
             cost_per_night,
-            phone
+            phone,
+            paid_amount
         };
 
         let method = 'POST';
