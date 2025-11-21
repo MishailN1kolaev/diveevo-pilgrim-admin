@@ -355,7 +355,14 @@ async def handle_web_app_data(message: Message, bot: Bot):
         # Try to find active booking
         room_num = None
         booking_id = None
-        if 'room' in data:
+
+        # Prioritize finding booking by user_id (fixes issue with room moves/stale client data)
+        user_active_booking = await db.get_active_booking_by_user(message.from_user.id)
+        if user_active_booking:
+            booking_id = user_active_booking['id']
+            room_num = user_active_booking['room_number']
+        elif 'room' in data:
+            # Fallback: try to find by room if user has no linked booking
             try:
                 room_num = int(data['room'])
                 active_booking = await db.get_active_booking_by_room(room_num)
