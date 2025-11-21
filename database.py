@@ -22,7 +22,8 @@ async def init_db():
                 items TEXT,
                 total_price REAL,
                 status TEXT DEFAULT 'new',
-                created_at TEXT
+                created_at TEXT,
+                booking_id INTEGER
             )
         """)
         await db.execute("""
@@ -37,7 +38,8 @@ async def init_db():
                 extras_total REAL DEFAULT 0,
                 is_cleaned BOOLEAN DEFAULT 0,
                 phone TEXT,
-                user_id INTEGER
+                user_id INTEGER,
+                paid_amount REAL DEFAULT 0
             )
         """)
 
@@ -48,10 +50,14 @@ async def init_db():
                 ('extras_total', 'REAL DEFAULT 0'),
                 ('is_cleaned', 'BOOLEAN DEFAULT 0'),
                 ('phone', 'TEXT'),
-                ('user_id', 'INTEGER')
+                ('user_id', 'INTEGER'),
+                ('paid_amount', 'REAL DEFAULT 0')
             ],
             'users': [
                 ('phone', 'TEXT')
+            ],
+            'orders': [
+                ('booking_id', 'INTEGER')
             ]
         }
 
@@ -60,7 +66,8 @@ async def init_db():
                 try:
                     await db.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
                 except Exception as e:
-                    logging.warning(f"Migration warning: Column {col_name} in {table} could not be added (might exist): {e}")
+                    # logging.warning(f"Migration warning: Column {col_name} in {table} could not be added (might exist): {e}")
+                    pass
 
         # New Tables
         await db.execute("""
@@ -144,19 +151,26 @@ async def get_user_by_phone(phone):
             return None
 
 # --- Orders ---
-async def save_order(user_id, items, total_price):
+async def save_order(user_id, items, total_price, booking_id=None):
     created_at = datetime.now().isoformat()
     items_json = json.dumps(items)
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("""
-            INSERT INTO orders (user_id, items, total_price, created_at)
-            VALUES (?, ?, ?, ?)
-        """, (user_id, items_json, total_price, created_at))
+            INSERT INTO orders (user_id, items, total_price, created_at, booking_id)
+            VALUES (?, ?, ?, ?, ?)
+        """, (user_id, items_json, total_price, created_at, booking_id))
         await db.commit()
         return cursor.lastrowid
 
+async def get_orders_by_booking(booking_id):
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM orders WHERE booking_id = ?", (booking_id,)) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
+
 # --- Bookings ---
-async def add_booking(room_number, guest_name, check_in, check_out, cost_per_night, phone=None):
+async def add_booking(room_number, guest_name, check_in, check_out, cost_per_night, phone=None, paid_amount=0):
     # Try to resolve user_id from phone
     user_id = None
     if phone:
@@ -166,9 +180,9 @@ async def add_booking(room_number, guest_name, check_in, check_out, cost_per_nig
 
     async with aiosqlite.connect(DB_NAME) as db:
         cursor = await db.execute("""
-            INSERT INTO bookings (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id))
+            INSERT INTO bookings (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id, paid_amount)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (room_number, guest_name, check_in, check_out, cost_per_night, phone, user_id, paid_amount))
         await db.commit()
         return cursor.lastrowid
 
@@ -179,24 +193,62 @@ async def link_bookings_to_user(phone, user_id):
         """, (user_id, phone))
         await db.commit()
 
-async def update_booking_extras(room_number, amount):
+async def update_booking_extras(room_number, amount, booking_id=None):
     today = datetime.now().strftime("%Y-%m-%d")
     async with aiosqlite.connect(DB_NAME) as db:
-        # Find active booking for this room
-        # Simple logic: check_in <= today < check_out
+        if booking_id:
+            # Direct update if ID is known
+            async with db.execute("SELECT extras_total FROM bookings WHERE id = ?", (booking_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    current_extras = row[0] or 0
+                    new_extras = current_extras + amount
+                    await db.execute("UPDATE bookings SET extras_total = ? WHERE id = ?", (new_extras, booking_id))
+                    await db.commit()
+                    return booking_id
+        else:
+            # Find active booking for this room
+            async with db.execute("""
+                SELECT id, extras_total FROM bookings
+                WHERE room_number = ? AND check_in <= ? AND check_out > ?
+                ORDER BY check_in DESC LIMIT 1
+            """, (room_number, today, today)) as cursor:
+                row = await cursor.fetchone()
+                if row:
+                    booking_id = row[0]
+                    current_extras = row[1] or 0
+                    new_extras = current_extras + amount
+                    await db.execute("UPDATE bookings SET extras_total = ? WHERE id = ?", (new_extras, booking_id))
+                    await db.commit()
+                    return booking_id
+    return None
+
+async def get_active_booking_by_room(room_number):
+    today = datetime.now().strftime("%Y-%m-%d")
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
         async with db.execute("""
-            SELECT id, extras_total FROM bookings
+            SELECT * FROM bookings
             WHERE room_number = ? AND check_in <= ? AND check_out > ?
             ORDER BY check_in DESC LIMIT 1
         """, (room_number, today, today)) as cursor:
             row = await cursor.fetchone()
             if row:
-                booking_id = row[0]
-                current_extras = row[1] or 0
-                new_extras = current_extras + amount
-                await db.execute("UPDATE bookings SET extras_total = ? WHERE id = ?", (new_extras, booking_id))
-                await db.commit()
-                return booking_id
+                return dict(row)
+    return None
+
+async def get_active_booking_by_user(user_id):
+    today = datetime.now().strftime("%Y-%m-%d")
+    async with aiosqlite.connect(DB_NAME) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("""
+            SELECT * FROM bookings
+            WHERE user_id = ? AND check_in <= ? AND check_out > ?
+            ORDER BY check_in DESC LIMIT 1
+        """, (user_id, today, today)) as cursor:
+            row = await cursor.fetchone()
+            if row:
+                return dict(row)
     return None
 
 async def get_bookings():
@@ -215,13 +267,13 @@ async def get_booking(booking_id):
                 return dict(row)
             return None
 
-async def update_booking(booking_id, room_number, guest_name, check_in, check_out, cost_per_night, phone):
+async def update_booking(booking_id, room_number, guest_name, check_in, check_out, cost_per_night, phone, paid_amount):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("""
             UPDATE bookings
-            SET room_number = ?, guest_name = ?, check_in = ?, check_out = ?, cost_per_night = ?, phone = ?
+            SET room_number = ?, guest_name = ?, check_in = ?, check_out = ?, cost_per_night = ?, phone = ?, paid_amount = ?
             WHERE id = ?
-        """, (room_number, guest_name, check_in, check_out, cost_per_night, phone, booking_id))
+        """, (room_number, guest_name, check_in, check_out, cost_per_night, phone, paid_amount, booking_id))
         await db.commit()
 
 async def delete_booking(booking_id):
